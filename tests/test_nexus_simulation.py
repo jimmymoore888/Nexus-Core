@@ -1,3 +1,4 @@
+import math
 import os
 import tempfile
 import unittest
@@ -62,16 +63,13 @@ class NexusSimulationTests(unittest.TestCase):
 
     def test_csv_telemetry_exported(self):
         """Running __main__ code path exports nexus_telemetry.csv."""
-        import importlib
-        import sys
+        import csv as _csv
 
         original_cwd = os.getcwd()
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 os.chdir(tmpdir)
-                # Simulate __main__ CSV export directly
                 result = run_simulation(cycles=500, seed=1)
-                import csv as _csv
 
                 flat_rows = []
                 for row in result["telemetry"]:
@@ -106,14 +104,10 @@ class NexusSimulationTests(unittest.TestCase):
         for row in result["telemetry"]:
             u = row["verification_utilization_pct"]
             self.assertTrue(
-                isinstance(u, float) and not (u != u),  # not NaN
-                msg=f"Cycle {row['Cycle']}: utilization is NaN",
+                math.isfinite(u),
+                msg=f"Cycle {row['Cycle']}: utilization is not finite ({u})",
             )
             self.assertGreaterEqual(u, 0.0)
-            self.assertFalse(
-                u == float("inf") or u == float("-inf"),
-                msg=f"Cycle {row['Cycle']}: utilization is infinite",
-            )
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import math
 import random
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Dict, List, TypedDict
+from typing import Any, Dict, List, TypedDict
 
 
 SOURCE_NAMES = ("sensor", "log", "consensus", "external")
@@ -15,6 +15,7 @@ BORING_DAMPENING_FACTOR = 0.05
 HOSTILE_SPIKE_PROBABILITY = 0.08
 HOSTILE_RECOVERY_CYCLES = 8
 CONSTRAINT_TOLERANCE = 1e-12
+MIN_VERIFICATION_BUDGET = 1e-12
 MIN_ADAPTATION_STATE = -3.0
 MAX_ADAPTATION_STATE = 3.0
 SIMULATION_VERSION = "Simulation Program v1.4"
@@ -298,9 +299,10 @@ class NexusCore:
         }
         desired_da = self.transform.transform(deltas)
 
-        # --- Risk score: divergence normalised to [0, 1] ---
+        # --- Risk score: divergence normalised to [0, 1].
+        # max(..., MIN_VERIFICATION_BUDGET) guards against a zero divergence_threshold. ---
         delta_r = _clamp(
-            meta["divergence"] / max(self.meta_verify.divergence_threshold, 1e-12),
+            meta["divergence"] / max(self.meta_verify.divergence_threshold, MIN_VERIFICATION_BUDGET),
             0.0,
             1.0,
         )
@@ -357,16 +359,15 @@ class NexusCore:
             self.constraint_violations += 1
         applied_da = _clamp(desired_da, -max_allowed_da, max_allowed_da)
 
-        # After enforcement, delta_a_granted ≤ d_v ≤ risk_adjusted_capacity,
-        # so actual_constraint_violations stays 0.
-        self.actual_constraint_violations = 0
+        # After enforcement delta_a_granted ≤ d_v ≤ risk_adjusted_capacity,
+        # so actual_constraint_violations is never incremented and stays 0.
 
         # --- Verification-economics accumulators ---
         delta_a_granted = abs(applied_da)
         self.verification_reserve += max(0.0, d_v - delta_a_granted)
         self.verification_debt += max(0.0, abs(desired_da) - d_v)
 
-        utilization = (delta_a_granted / d_v) if d_v > 1e-12 else 0.0
+        utilization = (delta_a_granted / d_v) if d_v > MIN_VERIFICATION_BUDGET else 0.0
 
         # --- State update ---
         raw_next = self.adaptation_state + applied_da
@@ -579,7 +580,7 @@ if __name__ == "__main__":
     csv_path = "nexus_telemetry.csv"
     flat_rows = []
     for row in result["telemetry"]:
-        flat: Dict[str, object] = {}
+        flat: Dict[str, Any] = {}
         for key, val in row.items():
             if key == "Weight Distribution":
                 for src, w in val.items():
