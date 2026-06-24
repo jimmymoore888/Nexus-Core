@@ -1,6 +1,13 @@
+import os
+import tempfile
 import unittest
 
-from nexus_simulation import MONOPOLY_THRESHOLD, NexusSimulation, run_simulation
+from nexus_simulation import (
+    MONOPOLY_THRESHOLD,
+    NexusSimulation,
+    export_telemetry_csv,
+    run_simulation,
+)
 
 
 class NexusSimulationTests(unittest.TestCase):
@@ -27,6 +34,51 @@ class NexusSimulationTests(unittest.TestCase):
         result = run_simulation(cycles=100_000, seed=33)
         self.assertLess(result["summary"]["avg_boring_adaptation"], 0.01)
         self.assertTrue(result["success"]["boring_noise_rejected"])
+
+    def test_attempted_constraint_violations_may_exceed_zero(self):
+        # seed=7 over 100k cycles is known to produce at least one attempted violation
+        # (raw unclamped transform demand exceeds verification capacity).
+        result = run_simulation(cycles=100_000, seed=7)
+        self.assertGreater(result["summary"]["attempted_constraint_violations"], 0)
+
+    def test_actual_constraint_violations_remain_zero(self):
+        # The ΔA ≤ ΔV invariant must hold: applied adaptation never exceeds the
+        # verification bound after clamping enforcement.
+        result = run_simulation(cycles=100_000, seed=7)
+        self.assertEqual(result["summary"]["actual_constraint_violations"], 0)
+        self.assertTrue(result["success"]["zero_constraint_violations"])
+
+    def test_constraint_violations_alias_matches_actual(self):
+        # constraint_violations is an alias for actual_constraint_violations.
+        result = run_simulation(cycles=20_000, seed=4)
+        self.assertEqual(
+            result["summary"]["constraint_violations"],
+            result["summary"]["actual_constraint_violations"],
+        )
+
+    def test_telemetry_row_contains_new_columns(self):
+        result = run_simulation(cycles=1_000, seed=7)
+        row = result["telemetry"][-1]
+        self.assertIn("Attempted Constraint Violations", row)
+        self.assertIn("Actual Constraint Violations", row)
+        self.assertIn("Constraint Violations", row)
+        self.assertIsInstance(row["Attempted Constraint Violations"], int)
+        self.assertIsInstance(row["Actual Constraint Violations"], int)
+
+    def test_csv_export_generates_valid_file(self):
+        result = run_simulation(cycles=500, seed=7)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, "telemetry.csv")
+            export_telemetry_csv(result["telemetry"], path=csv_path)
+            self.assertTrue(os.path.exists(csv_path))
+            with open(csv_path, encoding="utf-8") as f:
+                lines = f.readlines()
+            # Header + one row per cycle
+            self.assertEqual(len(lines), 501)
+            header = lines[0].strip()
+            self.assertIn("Attempted Constraint Violations", header)
+            self.assertIn("Actual Constraint Violations", header)
+            self.assertIn("Constraint Violations", header)
 
 
 if __name__ == "__main__":

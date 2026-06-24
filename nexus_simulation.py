@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import json
 from dataclasses import dataclass, field
 from statistics import median
 from typing import Dict, List, TypedDict
@@ -61,6 +63,8 @@ TelemetryRow = TypedDict(
         "Safe Lock Events": int,
         "Recovery Events": int,
         "Constraint Violations": int,
+        "Attempted Constraint Violations": int,
+        "Actual Constraint Violations": int,
         "Corrupted Signal": bool,
         "World": str,
     },
@@ -71,7 +75,9 @@ class SimulationSummary(TypedDict):
     containment_events: int
     safe_lock_events: int
     recovery_events: int
-    constraint_violations: int
+    attempted_constraint_violations: int
+    actual_constraint_violations: int
+    constraint_violations: int  # alias for actual_constraint_violations
     corrupted_detections: int
     avg_boring_adaptation: float
     max_weight: float
@@ -211,12 +217,15 @@ class AdaptiveTransformationMatrix:
 
     max_step: float = 0.06
 
-    def transform(self, deltas: Dict[str, float]) -> float:
-        demand = sum(
+    def raw_demand(self, deltas: Dict[str, float]) -> float:
+        """Unclamped weighted sum of delta signals (before max_step enforcement)."""
+        return sum(
             TRANSFORMATION_WEIGHTS[key] * deltas.get(key, 0.0)
             for key in ("dO", "dL", "dM", "dV", "dE")
         )
-        return _clamp(demand, -self.max_step, self.max_step)
+
+    def transform(self, deltas: Dict[str, float]) -> float:
+        return _clamp(self.raw_demand(deltas), -self.max_step, self.max_step)
 
 
 @dataclass
@@ -231,7 +240,8 @@ class NexusCore:
     safe_lock_events: int = 0
     safe_unlock_events: int = 0
     recovery_events: int = 0
-    constraint_violations: int = 0
+    attempted_constraint_violations: int = 0
+    actual_constraint_violations: int = 0
     hostile_recovery_cycles: int = 0
     recovery_initiated: bool = False
 
@@ -240,6 +250,11 @@ class NexusCore:
     verify_engine: OutcomeVerificationEngine = field(default_factory=OutcomeVerificationEngine)
     attestation: OutcomeAttestation = field(default_factory=OutcomeAttestation)
     weights: AdaptiveWeightEngine = field(default_factory=AdaptiveWeightEngine)
+
+    @property
+    def constraint_violations(self) -> int:
+        """Alias for actual_constraint_violations (backward compatibility)."""
+        return self.actual_constraint_violations
 
     def _bounded_state(self, value: float) -> float:
         return _clamp(value, MIN_ADAPTATION_STATE, MAX_ADAPTATION_STATE)
@@ -264,6 +279,9 @@ class NexusCore:
             "dV": d_v - 0.5,
             "dE": float(event.get("environment_shift", 0.0)),
         }
+        # raw_demand is computed before max_step clamping and before safety dampening;
+        # it represents the unconstrained adaptation intent used for attempted-violation accounting.
+        raw_demand = self.transform.raw_demand(deltas)
         desired_da = self.transform.transform(deltas)
 
         if world == "hostile" and bool(event.get("hostile_spike", False)):
@@ -304,12 +322,16 @@ class NexusCore:
             desired_da *= 0.10
 
         max_allowed_da = max(0.0, d_v)
-        if (
-            max_allowed_da > CONSTRAINT_TOLERANCE
-            and abs(desired_da) > max_allowed_da + CONSTRAINT_TOLERANCE
-        ):
-            self.constraint_violations += 1
+
+        # Attempted: raw unclamped demand would have exceeded the verification bound.
+        if abs(raw_demand) > max_allowed_da + CONSTRAINT_TOLERANCE:
+            self.attempted_constraint_violations += 1
+
         applied_da = _clamp(desired_da, -max_allowed_da, max_allowed_da)
+
+        # Actual: applied step still exceeds bound after enforcement (invariant check).
+        if abs(applied_da) > max_allowed_da + CONSTRAINT_TOLERANCE:
+            self.actual_constraint_violations += 1
 
         # Keep enforcement active even when we log an attempted over-bound adaptation.
         self.constraint_margin = max_allowed_da - abs(applied_da)
@@ -329,7 +351,9 @@ class NexusCore:
             "Containment Events": self.containment_events,
             "Safe Lock Events": self.safe_lock_events,
             "Recovery Events": self.recovery_events,
-            "Constraint Violations": self.constraint_violations,
+            "Constraint Violations": self.actual_constraint_violations,
+            "Attempted Constraint Violations": self.attempted_constraint_violations,
+            "Actual Constraint Violations": self.actual_constraint_violations,
             "Corrupted Signal": bool(meta["corrupted"]),
             "World": world,
         }
@@ -412,7 +436,7 @@ class NexusSimulation:
         )
 
         success = {
-            "zero_constraint_violations": self.core.constraint_violations == 0,
+            "zero_constraint_violations": self.core.actual_constraint_violations == 0,
             "no_runaway_adaptation": abs(self.core.adaptation_state) <= MAX_ADAPTATION_STATE,
             "no_weight_monopoly": max_weight < MONOPOLY_THRESHOLD,
             "corruption_detected": corrupted_detections > 0,
@@ -433,7 +457,9 @@ class NexusSimulation:
                 "containment_events": self.core.containment_events,
                 "safe_lock_events": self.core.safe_lock_events,
                 "recovery_events": self.core.recovery_events,
-                "constraint_violations": self.core.constraint_violations,
+                "attempted_constraint_violations": self.core.attempted_constraint_violations,
+                "actual_constraint_violations": self.core.actual_constraint_violations,
+                "constraint_violations": self.core.actual_constraint_violations,
                 "corrupted_detections": corrupted_detections,
                 "avg_boring_adaptation": avg_boring_adaptation,
                 "max_weight": max_weight,
@@ -447,13 +473,47 @@ def run_simulation(cycles: int = 100_000, seed: int = 7) -> SimulationResult:
     return simulation.run(cycles=cycles)
 
 
+_TELEMETRY_CSV_FIELDNAMES = [
+    "Cycle",
+    "A(n)",
+    "ΔA",
+    "ΔV",
+    "Constraint Margin",
+    "Weight Distribution",
+    "Truth Score",
+    "Accuracy Score",
+    "Containment Events",
+    "Safe Lock Events",
+    "Recovery Events",
+    "Constraint Violations",
+    "Attempted Constraint Violations",
+    "Actual Constraint Violations",
+    "Corrupted Signal",
+    "World",
+]
+
+
+def export_telemetry_csv(telemetry: List[TelemetryRow], path: str = "nexus_telemetry.csv") -> None:
+    """Export per-cycle telemetry rows to a CSV file."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_TELEMETRY_CSV_FIELDNAMES)
+        writer.writeheader()
+        for row in telemetry:
+            csv_row = dict(row)
+            csv_row["Weight Distribution"] = json.dumps(csv_row["Weight Distribution"])
+            writer.writerow(csv_row)
+
+
 if __name__ == "__main__":
     result = run_simulation()
     success = result["success"]
     print("Nexus-Core Adaptive Continuity Framework v1.4")
     print(f"Cycles: {result['cycles']}")
     print(f"Final State: {result['final_state']:.6f}")
-    print(f"Constraint Violations: {result['summary']['constraint_violations']}")
+    print(f"Attempted Constraint Violations: {result['summary']['attempted_constraint_violations']}")
+    print(f"Actual Constraint Violations: {result['summary']['actual_constraint_violations']}")
     print(f"Corrupted Detections: {result['summary']['corrupted_detections']}")
     print(f"Recovery Events: {result['summary']['recovery_events']}")
     print(f"NO DRIFT: {all(success.values())}")
+    export_telemetry_csv(result["telemetry"])
+    print("Telemetry exported to nexus_telemetry.csv")
