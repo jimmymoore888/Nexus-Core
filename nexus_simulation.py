@@ -130,12 +130,14 @@ def _clamp(value: float, low: float, high: float) -> float:
 
 
 def _safe_ratio(numerator: float, denominator: float) -> float:
+    """Return a finite ratio, falling back to 0.0 near a zero denominator."""
     if denominator <= CONSTRAINT_TOLERANCE:
         return 0.0
     return numerator / denominator
 
 
 def _risk_adjusted_capacity(delta_v_budget: float, delta_r: float) -> float:
+    """Return the hard-limit capacity implied by verification budget and risk."""
     return delta_v_budget / max(delta_r, 0.01)
 
 
@@ -248,14 +250,28 @@ class AdaptiveTransformationMatrix:
     max_step: float = 0.06
 
     def raw_demand(self, deltas: Dict[str, float]) -> float:
-        """Return the weighted adaptation demand before max-step clamping."""
+        """Return the weighted adaptation demand before max-step clamping.
+
+        Args:
+            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE.
+
+        Returns:
+            The signed weighted demand before enforcement of ``max_step``.
+        """
         return sum(
             TRANSFORMATION_WEIGHTS[key] * deltas.get(key, 0.0)
             for key in ("dO", "dL", "dM", "dV", "dE")
         )
 
     def transform(self, deltas: Dict[str, float]) -> float:
-        """Clamp the raw weighted adaptation demand to the configured step limit."""
+        """Clamp the raw weighted adaptation demand to the configured step limit.
+
+        Args:
+            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE.
+
+        Returns:
+            The signed adaptation request after max-step clamping.
+        """
         return _clamp(self.raw_demand(deltas), -self.max_step, self.max_step)
 
 
@@ -600,8 +616,9 @@ def export_telemetry_csv(telemetry: List[TelemetryRow], path: str = "nexus_telem
         path: Output path for the CSV file. Relative paths are resolved from the
             current working directory.
 
-    Raises `OSError` (or a subclass) if the file cannot be created or written,
-    e.g. due to permission issues or a full disk.
+    Raises:
+        OSError: If the file cannot be created or written, for example due to
+            permission issues or a full disk.
     """
     try:
         with open(path, "w", newline="", encoding="utf-8") as f:
