@@ -97,6 +97,11 @@ class NexusSimulationTests(unittest.TestCase):
         self.assertIn("Constraint Violations", row)
         self.assertIsInstance(row["Attempted Constraint Violations"], int)
         self.assertIsInstance(row["Actual Constraint Violations"], int)
+        self.assertIsInstance(row["Constraint Violations"], int)
+        self.assertEqual(
+            row["Constraint Violations"],
+            row["Actual Constraint Violations"],
+        )
 
     def test_risk_adjusted_constraint_holds_for_every_cycle(self):
         result = run_simulation(cycles=25_000, seed=9)
