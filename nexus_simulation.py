@@ -39,6 +39,13 @@ class MetaVerificationResult(TypedDict):
     corrupted: bool
 
 
+class VerificationResult(TypedDict):
+    accuracy: float
+    truth: float
+    influence: float
+    source_accuracy: Dict[str, float]
+
+
 TelemetryRow = TypedDict(
     "TelemetryRow",
     {
@@ -149,7 +156,7 @@ class OutcomeVerificationEngine:
 
     def evaluate(
         self, prediction: float, truth: float, source_signals: Dict[str, float]
-    ) -> Dict[str, float]:
+    ) -> VerificationResult:
         prediction = _clamp(prediction, 0.0, 1.0)
         truth = _clamp(truth, 0.0, 1.0)
         accuracy = 1.0 - abs(prediction - truth)
@@ -296,15 +303,16 @@ class NexusCore:
         if self.safe_lock or self.containment_mode:
             desired_da *= 0.10
 
-        max_da = max(0.0, d_v)
+        max_allowed_da = max(0.0, d_v)
         if (
-            max_da > CONSTRAINT_TOLERANCE
-            and abs(desired_da) > max_da + CONSTRAINT_TOLERANCE
+            max_allowed_da > CONSTRAINT_TOLERANCE
+            and abs(desired_da) > max_allowed_da + CONSTRAINT_TOLERANCE
         ):
             self.constraint_violations += 1
-        applied_da = _clamp(desired_da, -max_da, max_da)
+        applied_da = _clamp(desired_da, -max_allowed_da, max_allowed_da)
 
-        self.constraint_margin = max_da - abs(applied_da)
+        # Keep enforcement active even when we log an attempted over-bound adaptation.
+        self.constraint_margin = max_allowed_da - abs(applied_da)
         self.next_adaptation_state = self._bounded_state(self.adaptation_state + applied_da)
         a_n = self.adaptation_state
         self.adaptation_state = self.next_adaptation_state
@@ -313,7 +321,7 @@ class NexusCore:
             "Cycle": cycle,
             "A(n)": a_n,
             "ΔA": abs(applied_da),
-            "ΔV": max_da,
+            "ΔV": max_allowed_da,
             "Constraint Margin": self.constraint_margin,
             "Weight Distribution": dict(self.weights.weights),
             "Truth Score": verification["truth"],
@@ -334,6 +342,7 @@ class NexusSimulation:
         self.core = NexusCore()
 
     def _world_for_cycle(self, cycle: int, total_cycles: int) -> str:
+        """Runs honest→deceptive→hostile→boring worlds in equal-length phases."""
         span = total_cycles // 4
         if cycle <= span:
             return "honest"
