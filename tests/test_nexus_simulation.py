@@ -92,6 +92,8 @@ class NexusSimulationTests(unittest.TestCase):
         self.assertIn("governance_interventions", row)
         self.assertIn("attempted_constraint_violations", row)
         self.assertIn("actual_constraint_violations", row)
+        # The titled fields preserve the legacy cumulative counters, while the
+        # snake_case fields carry the new per-cycle economics telemetry.
         self.assertIn("Attempted Constraint Violations", row)
         self.assertIn("Actual Constraint Violations", row)
         self.assertIn("Constraint Violations", row)

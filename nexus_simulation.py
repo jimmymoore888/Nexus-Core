@@ -504,15 +504,9 @@ class NexusSimulation:
         avg_boring_adaptation = (
             boring_adaptation / boring_cycles if boring_cycles > 0 else 0.0
         )
-        mean_utilization = (
-            utilization_sum / cycles
-            if cycles > 0
-            else 0.0
-        )
+        mean_utilization = utilization_sum / cycles if cycles > 0 else 0.0
         governance_intervention_rate = (
-            governance_interventions_total / cycles
-            if cycles > 0
-            else 0.0
+            governance_interventions_total / cycles if cycles > 0 else 0.0
         )
         mean_da_dv_ratio = _safe_ratio(total_v_spent, total_v_earned)
         v_inflation_detected = (
@@ -606,7 +600,7 @@ def export_telemetry_csv(telemetry: List[TelemetryRow], path: str = "nexus_telem
         path: Output path for the CSV file. Relative paths are resolved from the
             current working directory.
 
-    Raises ``OSError`` (or a subclass) if the file cannot be created or written,
+    Raises `OSError` (or a subclass) if the file cannot be created or written,
     e.g. due to permission issues or a full disk.
     """
     try:
