@@ -14,6 +14,16 @@ BORING_DAMPENING_FACTOR = 0.05
 HOSTILE_SPIKE_PROBABILITY = 0.08
 HOSTILE_RECOVERY_CYCLES = 8
 CONSTRAINT_TOLERANCE = 1e-12
+MIN_ADAPTATION_STATE = -3.0
+MAX_ADAPTATION_STATE = 3.0
+SIMULATION_VERSION = "Simulation Program v1.4"
+TRANSFORMATION_WEIGHTS = {
+    "dO": 0.28,
+    "dL": 0.20,
+    "dM": 0.20,
+    "dV": 0.20,
+    "dE": 0.12,
+}
 
 
 class SimulationEvent(TypedDict):
@@ -195,12 +205,9 @@ class AdaptiveTransformationMatrix:
     max_step: float = 0.06
 
     def transform(self, deltas: Dict[str, float]) -> float:
-        demand = (
-            0.28 * deltas.get("dO", 0.0)
-            + 0.20 * deltas.get("dL", 0.0)
-            + 0.20 * deltas.get("dM", 0.0)
-            + 0.20 * deltas.get("dV", 0.0)
-            + 0.12 * deltas.get("dE", 0.0)
+        demand = sum(
+            TRANSFORMATION_WEIGHTS[key] * deltas.get(key, 0.0)
+            for key in ("dO", "dL", "dM", "dV", "dE")
         )
         return _clamp(demand, -self.max_step, self.max_step)
 
@@ -228,7 +235,7 @@ class NexusCore:
     weights: AdaptiveWeightEngine = field(default_factory=AdaptiveWeightEngine)
 
     def _bounded_state(self, value: float) -> float:
-        return _clamp(value, -3.0, 3.0)
+        return _clamp(value, MIN_ADAPTATION_STATE, MAX_ADAPTATION_STATE)
 
     def step(self, event: SimulationEvent, cycle: int) -> TelemetryRow:
         world = str(event["world"])
@@ -397,7 +404,7 @@ class NexusSimulation:
 
         success = {
             "zero_constraint_violations": self.core.constraint_violations == 0,
-            "no_runaway_adaptation": abs(self.core.adaptation_state) <= 3.0,
+            "no_runaway_adaptation": abs(self.core.adaptation_state) <= MAX_ADAPTATION_STATE,
             "no_weight_monopoly": max_weight < MONOPOLY_THRESHOLD,
             "corruption_detected": corrupted_detections > 0,
             "hostile_recovery_observed": self.core.recovery_events > 0,
@@ -408,7 +415,7 @@ class NexusSimulation:
         return {
             "project": "Nexus-Core",
             "framework": "Adaptive Continuity Framework",
-            "version": "Simulation Program v1.4",
+            "version": SIMULATION_VERSION,
             "key_metric": "NO DRIFT",
             "cycles": cycles,
             "final_state": self.core.adaptation_state,
