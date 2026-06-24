@@ -279,8 +279,12 @@ class NexusCore:
             "dV": d_v - 0.5,
             "dE": float(event.get("environment_shift", 0.0)),
         }
-        # raw_demand is computed before max_step clamping and before safety dampening;
-        # it represents the unconstrained adaptation intent used for attempted-violation accounting.
+        # raw_demand is the unclamped weighted sum of delta signals, computed before
+        # max_step enforcement and before all safety-dampening mechanisms (hostile-spike
+        # suppression, safe-lock 0.10× multiplier, boring-world dampening).  It
+        # represents the raw signal-level adaptation intent and is used to detect
+        # attempted violations: cases where the underlying forces would have exceeded
+        # the verification bound even if the layered safety system had not intervened.
         raw_demand = self.transform.raw_demand(deltas)
         desired_da = self.transform.transform(deltas)
 
@@ -494,14 +498,21 @@ _TELEMETRY_CSV_FIELDNAMES = [
 
 
 def export_telemetry_csv(telemetry: List[TelemetryRow], path: str = "nexus_telemetry.csv") -> None:
-    """Export per-cycle telemetry rows to a CSV file."""
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_TELEMETRY_CSV_FIELDNAMES)
-        writer.writeheader()
-        for row in telemetry:
-            csv_row = dict(row)
-            csv_row["Weight Distribution"] = json.dumps(csv_row["Weight Distribution"])
-            writer.writerow(csv_row)
+    """Export per-cycle telemetry rows to a CSV file.
+
+    Raises ``OSError`` (or a subclass) if the file cannot be created or written,
+    e.g. due to permission issues or a full disk.
+    """
+    try:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=_TELEMETRY_CSV_FIELDNAMES)
+            writer.writeheader()
+            for row in telemetry:
+                csv_row = dict(row)
+                csv_row["Weight Distribution"] = json.dumps(csv_row["Weight Distribution"])
+                writer.writerow(csv_row)
+    except OSError as exc:
+        raise OSError(f"Failed to write telemetry CSV to {path!r}: {exc}") from exc
 
 
 if __name__ == "__main__":
