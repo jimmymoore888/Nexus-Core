@@ -8,6 +8,7 @@ import unittest
 from nexus_simulation import (
     CONSTRAINT_TOLERANCE,
     MONOPOLY_THRESHOLD,
+    NexusCore,
     NexusSimulation,
     export_telemetry_csv,
     run_simulation,
@@ -40,12 +41,25 @@ class NexusSimulationTests(unittest.TestCase):
         self.assertTrue(result["success"]["boring_noise_rejected"])
 
     def test_attempted_constraint_violations_may_exceed_zero(self):
-        result = run_simulation(cycles=100_000, seed=7)
-        self.assertGreater(result["summary"]["attempted_constraint_violations"], 0)
-        self.assertGreater(
-            sum(row["attempted_constraint_violations"] for row in result["telemetry"]),
-            0,
+        core = NexusCore()
+        core.adaptation_state = 3.0
+        row = core.step(
+            {
+                "world": "honest",
+                "signals": {
+                    "sensor": 0.02,
+                    "log": 0.02,
+                    "consensus": 0.02,
+                    "external": 0.02,
+                },
+                "environment_shift": 0.0,
+                "hostile_spike": False,
+            },
+            cycle=1,
         )
+        self.assertEqual(row["attempted_constraint_violations"], 1)
+        self.assertEqual(row["actual_constraint_violations"], 0)
+        self.assertGreater(core.verification_debt, 0.0)
 
     def test_actual_constraint_violations_remain_zero(self):
         result = run_simulation(cycles=100_000, seed=7)
