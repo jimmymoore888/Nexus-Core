@@ -148,6 +148,7 @@ class NexusCore:
     constraint_margin: float = 0.0
     containment_events: int = 0
     safe_lock_events: int = 0
+    safe_unlock_events: int = 0
     recovery_events: int = 0
     constraint_violations: int = 0
     hostile_recovery_cycles: int = 0
@@ -193,7 +194,8 @@ class NexusCore:
             self.recovery_mode = True
             self.hostile_recovery_cycles -= 1
             if self.hostile_recovery_cycles == 0:
-                self.recovery_events += 1
+                if self.containment_mode and self.recovery_mode:
+                    self.recovery_events += 1
                 self.containment_mode = False
                 self.recovery_mode = False
 
@@ -204,6 +206,8 @@ class NexusCore:
                 self.safe_lock_events += 1
         else:
             self.safe_lock = False
+            if was_safe_locked:
+                self.safe_unlock_events += 1
 
         if (
             world == "boring"
