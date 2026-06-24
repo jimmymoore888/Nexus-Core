@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Dict, List
+from typing import Dict, List, TypedDict
 import math
 import random
 
@@ -13,6 +13,72 @@ BORING_ENV_SHIFT_THRESHOLD = 0.015
 BORING_DAMPENING_FACTOR = 0.05
 HOSTILE_SPIKE_PROBABILITY = 0.08
 HOSTILE_RECOVERY_CYCLES = 8
+
+
+class SimulationEvent(TypedDict):
+    world: str
+    signals: Dict[str, float]
+    environment_shift: float
+    hostile_spike: bool
+
+
+class MetaVerificationResult(TypedDict):
+    divergence: float
+    verification_capacity: float
+    corrupted: bool
+
+
+TelemetryRow = TypedDict(
+    "TelemetryRow",
+    {
+        "Cycle": int,
+        "A(n)": float,
+        "ΔA": float,
+        "ΔV": float,
+        "Constraint Margin": float,
+        "Weight Distribution": Dict[str, float],
+        "Truth Score": float,
+        "Accuracy Score": float,
+        "Containment Events": int,
+        "Safe Lock Events": int,
+        "Recovery Events": int,
+        "Constraint Violations": int,
+        "Corrupted Signal": bool,
+        "World": str,
+    },
+)
+
+
+class SimulationSummary(TypedDict):
+    containment_events: int
+    safe_lock_events: int
+    recovery_events: int
+    constraint_violations: int
+    corrupted_detections: int
+    avg_boring_adaptation: float
+    max_weight: float
+
+
+class SimulationSuccess(TypedDict):
+    zero_constraint_violations: bool
+    no_runaway_adaptation: bool
+    no_weight_monopoly: bool
+    corruption_detected: bool
+    hostile_recovery_observed: bool
+    boring_noise_rejected: bool
+    stable_100k_cycles: bool
+
+
+class SimulationResult(TypedDict):
+    project: str
+    framework: str
+    version: str
+    key_metric: str
+    cycles: int
+    final_state: float
+    telemetry: List[TelemetryRow]
+    summary: SimulationSummary
+    success: SimulationSuccess
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -104,7 +170,7 @@ class MetaVerificationMatrix:
 
     def evaluate(
         self, source_signals: Dict[str, float], weights: Dict[str, float]
-    ) -> Dict[str, float | bool]:
+    ) -> MetaVerificationResult:
         values = [_clamp(source_signals[source], 0.0, 1.0) for source in SOURCE_NAMES]
         center = median(values)
         divergence = math.sqrt(sum((value - center) ** 2 for value in values) / len(values))
@@ -162,7 +228,7 @@ class NexusCore:
     def _bounded_state(self, value: float) -> float:
         return _clamp(value, -3.0, 3.0)
 
-    def step(self, event: Dict[str, float | str | bool], cycle: int) -> Dict[str, object]:
+    def step(self, event: SimulationEvent, cycle: int) -> TelemetryRow:
         world = str(event["world"])
         source_signals = event["signals"]
         source_signals = {k: float(v) for k, v in source_signals.items()}
@@ -263,7 +329,7 @@ class NexusSimulation:
             return "hostile"
         return "boring"
 
-    def _event(self, world: str) -> Dict[str, object]:
+    def _event(self, world: str) -> SimulationEvent:
         r = self.random
         if world == "honest":
             base = 0.75 + r.uniform(-0.03, 0.03)
@@ -298,8 +364,8 @@ class NexusSimulation:
             "hostile_spike": spike,
         }
 
-    def run(self, cycles: int = 100_000) -> Dict[str, object]:
-        telemetry: List[Dict[str, object]] = []
+    def run(self, cycles: int = 100_000) -> SimulationResult:
+        telemetry: List[TelemetryRow] = []
         corrupted_detections = 0
         boring_adaptation = 0.0
         boring_cycles = 0
@@ -353,7 +419,7 @@ class NexusSimulation:
         }
 
 
-def run_simulation(cycles: int = 100_000, seed: int = 7) -> Dict[str, object]:
+def run_simulation(cycles: int = 100_000, seed: int = 7) -> SimulationResult:
     simulation = NexusSimulation(seed=seed)
     return simulation.run(cycles=cycles)
 
