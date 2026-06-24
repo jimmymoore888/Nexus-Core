@@ -1,6 +1,6 @@
 import unittest
 
-from nexus_simulation import NexusSimulation, run_simulation
+from nexus_simulation import MONOPOLY_THRESHOLD, NexusSimulation, run_simulation
 
 
 class NexusSimulationTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class NexusSimulationTests(unittest.TestCase):
         result = run_simulation(cycles=20_000, seed=4)
         weights = result["telemetry"][-1]["Weight Distribution"]
         self.assertAlmostEqual(sum(weights.values()), 1.0, places=9)
-        self.assertLess(max(weights.values()), 0.60)
+        self.assertLess(max(weights.values()), MONOPOLY_THRESHOLD)
 
     def test_deceptive_and_hostile_worlds_trigger_safety_features(self):
         sim = NexusSimulation(seed=23)

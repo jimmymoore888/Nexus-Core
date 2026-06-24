@@ -8,6 +8,7 @@ import random
 
 
 SOURCE_NAMES = ("sensor", "log", "consensus", "external")
+MONOPOLY_THRESHOLD = 0.60
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -186,9 +187,11 @@ class NexusCore:
                 self.containment_mode = False
                 self.recovery_mode = False
 
+        was_safe_locked = self.safe_lock
         if bool(meta["corrupted"]):
             self.safe_lock = True
-            self.safe_lock_events += 1
+            if not was_safe_locked:
+                self.safe_lock_events += 1
         else:
             self.safe_lock = False
 
@@ -201,7 +204,7 @@ class NexusCore:
         max_da = max(0.0, d_v)
         applied_da = _clamp(desired_da, -max_da, max_da)
 
-        if abs(applied_da) - max_da > 1e-12:
+        if abs(applied_da) > max_da + 1e-12:
             self.constraint_violations += 1
 
         self.constraint_margin = max_da - abs(applied_da)
@@ -298,12 +301,14 @@ class NexusSimulation:
 
         final_weights = telemetry[-1]["Weight Distribution"]
         max_weight = max(final_weights.values())
-        avg_boring_adaptation = boring_adaptation / max(1, boring_cycles)
+        avg_boring_adaptation = (
+            boring_adaptation / boring_cycles if boring_cycles > 0 else 0.0
+        )
 
         success = {
             "zero_constraint_violations": self.core.constraint_violations == 0,
             "no_runaway_adaptation": abs(self.core.adaptation_state) <= 3.0,
-            "no_weight_monopoly": max_weight < 0.60,
+            "no_weight_monopoly": max_weight < MONOPOLY_THRESHOLD,
             "corruption_detected": corrupted_detections > 0,
             "hostile_recovery_observed": self.core.recovery_events > 0,
             "boring_noise_rejected": avg_boring_adaptation < 0.01,
