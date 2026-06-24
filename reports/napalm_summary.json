@@ -1,0 +1,78 @@
+{
+  "all_passed": true,
+  "failure_telemetry_exported": [],
+  "worlds": [
+    {
+      "world": "Napalm-FalseSignal",
+      "max_da_dv_ratio": 0.016168987793309483,
+      "mean_da_dv_ratio": 0.014412851858529311,
+      "final_verification_reserve": 1996.4707970577495,
+      "final_verification_debt": 0.0,
+      "actual_constraint_violations": 0,
+      "attempted_constraint_violations": 0,
+      "governance_intervention_count": 1,
+      "cycles_to_breach": -1,
+      "passed": true
+    },
+    {
+      "world": "Napalm-Inflation",
+      "max_da_dv_ratio": 0.06,
+      "mean_da_dv_ratio": 0.06,
+      "final_verification_reserve": 4699.99999999995,
+      "final_verification_debt": 0.0,
+      "actual_constraint_violations": 0,
+      "attempted_constraint_violations": 0,
+      "governance_intervention_count": 0,
+      "cycles_to_breach": -1,
+      "passed": true
+    },
+    {
+      "world": "Napalm-ReserveDrain",
+      "max_da_dv_ratio": 0.0,
+      "mean_da_dv_ratio": 0.0,
+      "final_verification_reserve": 0.0,
+      "final_verification_debt": 300.00000000000983,
+      "actual_constraint_violations": 0,
+      "attempted_constraint_violations": 5000,
+      "governance_intervention_count": 0,
+      "cycles_to_breach": 1,
+      "passed": true
+    },
+    {
+      "world": "Napalm-Byzantine",
+      "max_da_dv_ratio": 0.02141478418974076,
+      "mean_da_dv_ratio": 0.0014382800919783693,
+      "final_verification_reserve": 1298.170311239144,
+      "final_verification_debt": 0.0,
+      "actual_constraint_violations": 0,
+      "attempted_constraint_violations": 0,
+      "governance_intervention_count": 1,
+      "cycles_to_breach": -1,
+      "passed": true
+    },
+    {
+      "world": "Napalm-Recursive",
+      "max_da_dv_ratio": 3.0,
+      "mean_da_dv_ratio": 1.530612244897959,
+      "final_verification_reserve": 2300.000000000081,
+      "final_verification_debt": 100.00000000000443,
+      "actual_constraint_violations": 0,
+      "attempted_constraint_violations": 0,
+      "governance_intervention_count": 0,
+      "cycles_to_breach": -1,
+      "passed": true
+    },
+    {
+      "world": "Napalm-Lockdown",
+      "max_da_dv_ratio": 0.023529411764705882,
+      "mean_da_dv_ratio": 0.001135368236557725,
+      "final_verification_reserve": 1273.5524054983898,
+      "final_verification_debt": 0.0,
+      "actual_constraint_violations": 0,
+      "attempted_constraint_violations": 0,
+      "governance_intervention_count": 1,
+      "cycles_to_breach": -1,
+      "passed": true
+    }
+  ]
+}

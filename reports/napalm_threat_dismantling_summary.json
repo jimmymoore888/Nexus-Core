@@ -1,0 +1,106 @@
+{
+  "threats_tested": 6,
+  "threats_stopped_before_core": 6,
+  "threats_reaching_core": 0,
+  "actual_constraint_violations": 0,
+  "verification_debt_created": false,
+  "total_verification_debt": 0.0,
+  "containment_success_rate": 1.0,
+  "weakest_layer": "Governance",
+  "strongest_layer": "Verification",
+  "threats": [
+    {
+      "threat": "Surface-MalformedInputs",
+      "layer": "Surface",
+      "governors_activated": [
+        "MetaVerificationMatrix",
+        "SafeLock",
+        "AdaptiveWeightEngine"
+      ],
+      "reached_core": false,
+      "actual_constraint_violations": 0,
+      "verification_debt": 0.0,
+      "containment_result": "contained",
+      "safe_lock_events": 57,
+      "containment_events": 0,
+      "recovery_events": 0
+    },
+    {
+      "threat": "Signal-CorruptedSource",
+      "layer": "Signal",
+      "governors_activated": [
+        "MetaVerificationMatrix",
+        "SafeLock",
+        "AdaptiveWeightEngine"
+      ],
+      "reached_core": false,
+      "actual_constraint_violations": 0,
+      "verification_debt": 0.0,
+      "containment_result": "contained",
+      "safe_lock_events": 1,
+      "containment_events": 0,
+      "recovery_events": 0
+    },
+    {
+      "threat": "Verification-InflatedBudget",
+      "layer": "Verification",
+      "governors_activated": [
+        "AdaptiveWeightEngine"
+      ],
+      "reached_core": false,
+      "actual_constraint_violations": 0,
+      "verification_debt": 0.0,
+      "containment_result": "contained",
+      "safe_lock_events": 0,
+      "containment_events": 0,
+      "recovery_events": 0
+    },
+    {
+      "threat": "Influence-WeightPoisoning",
+      "layer": "Influence",
+      "governors_activated": [
+        "MetaVerificationMatrix",
+        "SafeLock",
+        "AdaptiveWeightEngine"
+      ],
+      "reached_core": false,
+      "actual_constraint_violations": 0,
+      "verification_debt": 0.0,
+      "containment_result": "contained",
+      "safe_lock_events": 150,
+      "containment_events": 0,
+      "recovery_events": 0
+    },
+    {
+      "threat": "Governance-SafeLockAbuse",
+      "layer": "Governance",
+      "governors_activated": [
+        "MetaVerificationMatrix",
+        "SafeLock",
+        "AdaptiveWeightEngine"
+      ],
+      "reached_core": false,
+      "actual_constraint_violations": 0,
+      "verification_debt": 0.0,
+      "containment_result": "contained",
+      "safe_lock_events": 150,
+      "containment_events": 0,
+      "recovery_events": 0
+    },
+    {
+      "threat": "Core-DirectBreachAttempt",
+      "layer": "Core",
+      "governors_activated": [
+        "Containment",
+        "AdaptiveWeightEngine"
+      ],
+      "reached_core": false,
+      "actual_constraint_violations": 0,
+      "verification_debt": 0.0,
+      "containment_result": "contained",
+      "safe_lock_events": 0,
+      "containment_events": 300,
+      "recovery_events": 0
+    }
+  ]
+}
