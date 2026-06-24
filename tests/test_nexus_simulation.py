@@ -114,6 +114,11 @@ class NexusSimulationTests(unittest.TestCase):
                 hard_limit + CONSTRAINT_TOLERANCE,
             )
 
+    def test_risk_adjusted_capacity_handles_low_risk_floor(self):
+        self.assertEqual(_risk_adjusted_capacity(0.5, 0.0), 50.0)
+        self.assertEqual(_risk_adjusted_capacity(0.5, 0.001), 50.0)
+        self.assertEqual(_risk_adjusted_capacity(0.5, 0.5), 1.0)
+
     def test_verification_utilization_is_finite(self):
         result = run_simulation(cycles=25_000, seed=12)
         for row in result["telemetry"]:
@@ -158,7 +163,7 @@ class NexusSimulationTests(unittest.TestCase):
             os.path.join(os.path.dirname(__file__), "..", "nexus_simulation.py")
         )
         with tempfile.TemporaryDirectory() as tmpdir:
-            subprocess.run(
+            completed = subprocess.run(
                 [sys.executable, script_path],
                 cwd=tmpdir,
                 check=True,
@@ -166,7 +171,14 @@ class NexusSimulationTests(unittest.TestCase):
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "nexus_telemetry.csv")))
+            self.assertEqual(completed.returncode, 0)
+            csv_path = os.path.join(tmpdir, "nexus_telemetry.csv")
+            self.assertTrue(os.path.exists(csv_path))
+            with open(csv_path, encoding="utf-8") as f:
+                header = f.readline().strip()
+                first_row = f.readline().strip()
+            self.assertIn("delta_v_budget", header)
+            self.assertTrue(first_row)
 
 
 if __name__ == "__main__":

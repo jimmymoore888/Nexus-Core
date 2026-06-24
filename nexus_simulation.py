@@ -130,7 +130,7 @@ def _clamp(value: float, low: float, high: float) -> float:
 
 
 def _safe_ratio(numerator: float, denominator: float) -> float:
-    """Return a finite ratio, falling back to 0.0 near a zero denominator."""
+    """Return a finite ratio, falling back to 0.0 at or below tolerance."""
     if denominator <= CONSTRAINT_TOLERANCE:
         return 0.0
     return numerator / denominator
@@ -253,7 +253,8 @@ class AdaptiveTransformationMatrix:
         """Return the weighted adaptation demand before max-step clamping.
 
         Args:
-            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE.
+            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE as
+                defined by ``TRANSFORMATION_WEIGHTS``.
 
         Returns:
             The signed weighted demand before enforcement of ``max_step``.
@@ -267,7 +268,8 @@ class AdaptiveTransformationMatrix:
         """Clamp the raw weighted adaptation demand to the configured step limit.
 
         Args:
-            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE.
+            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE as
+                defined by ``TRANSFORMATION_WEIGHTS``.
 
         Returns:
             The signed adaptation request after max-step clamping.
@@ -618,7 +620,8 @@ def export_telemetry_csv(telemetry: List[TelemetryRow], path: str = "nexus_telem
 
     Raises:
         OSError: If the file cannot be created or written, for example due to
-            permission issues or a full disk.
+            permission issues or a full disk. The original exception is
+            chained with the output path for added context.
     """
     try:
         with open(path, "w", newline="", encoding="utf-8") as f:
