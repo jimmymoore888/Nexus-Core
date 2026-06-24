@@ -9,6 +9,10 @@ import random
 
 SOURCE_NAMES = ("sensor", "log", "consensus", "external")
 MONOPOLY_THRESHOLD = 0.60
+BORING_ENV_SHIFT_THRESHOLD = 0.015
+BORING_DAMPENING_FACTOR = 0.05
+HOSTILE_SPIKE_PROBABILITY = 0.08
+HOSTILE_RECOVERY_CYCLES = 8
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -17,6 +21,8 @@ def _clamp(value: float, low: float, high: float) -> float:
 
 @dataclass
 class AdaptiveWeightEngine:
+    """Tracks source reliability with bounded influence to prevent monopolies."""
+
     floor: float = 0.10
     cap: float = 0.55
     momentum: float = 0.25
@@ -92,6 +98,8 @@ class OutcomeVerificationEngine:
 
 @dataclass
 class MetaVerificationMatrix:
+    """Cross-validates source signals and estimates verification capacity."""
+
     divergence_threshold: float = 0.30
 
     def evaluate(
@@ -115,6 +123,8 @@ class MetaVerificationMatrix:
 
 @dataclass
 class AdaptiveTransformationMatrix:
+    """Transforms bounded ΔO/ΔL/ΔM/ΔV/ΔE signals into a bounded adaptation step."""
+
     max_step: float = 0.06
 
     def transform(self, deltas: Dict[str, float]) -> float:
@@ -176,7 +186,7 @@ class NexusCore:
         if world == "hostile" and bool(event.get("hostile_spike", False)):
             self.containment_mode = True
             self.recovery_mode = True
-            self.hostile_recovery_cycles = 8
+            self.hostile_recovery_cycles = HOSTILE_RECOVERY_CYCLES
             self.containment_events += 1
 
         if self.hostile_recovery_cycles > 0:
@@ -195,17 +205,20 @@ class NexusCore:
         else:
             self.safe_lock = False
 
-        if world == "boring" and abs(float(event.get("environment_shift", 0.0))) < 0.015:
-            desired_da *= 0.05
+        if (
+            world == "boring"
+            and abs(float(event.get("environment_shift", 0.0)))
+            < BORING_ENV_SHIFT_THRESHOLD
+        ):
+            desired_da *= BORING_DAMPENING_FACTOR
 
         if self.safe_lock or self.containment_mode:
             desired_da *= 0.10
 
         max_da = max(0.0, d_v)
-        applied_da = _clamp(desired_da, -max_da, max_da)
-
-        if abs(applied_da) > max_da + 1e-12:
+        if abs(desired_da) > max_da + 1e-12:
             self.constraint_violations += 1
+        applied_da = _clamp(desired_da, -max_da, max_da)
 
         self.constraint_margin = max_da - abs(applied_da)
         self.next_adaptation_state = self._bounded_state(self.adaptation_state + applied_da)
@@ -263,7 +276,7 @@ class NexusSimulation:
         elif world == "hostile":
             base = 0.55 + r.uniform(-0.15, 0.15)
             signals = {name: base + r.uniform(-0.20, 0.20) for name in SOURCE_NAMES}
-            spike = r.random() < 0.08
+            spike = r.random() < HOSTILE_SPIKE_PROBABILITY
             if spike:
                 attacker = r.choice(SOURCE_NAMES)
                 signals[attacker] = r.uniform(0.0, 1.0)
