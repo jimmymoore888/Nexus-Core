@@ -137,7 +137,16 @@ def _safe_ratio(numerator: float, denominator: float) -> float:
 
 
 def _risk_adjusted_capacity(delta_v_budget: float, delta_r: float) -> float:
-    """Return the hard-limit capacity implied by verification budget and risk."""
+    """Return the hard-limit capacity implied by verification budget and risk.
+
+    Args:
+        delta_v_budget: Current per-cycle verification capacity budget.
+        delta_r: Current per-cycle risk score in the range [0.0, 1.0].
+
+    Returns:
+        The capacity bound computed as ``delta_v_budget / max(delta_r, 0.01)``.
+        The 0.01 floor prevents division by zero for near-zero risk.
+    """
     return delta_v_budget / max(delta_r, 0.01)
 
 
@@ -253,8 +262,10 @@ class AdaptiveTransformationMatrix:
         """Return the weighted adaptation demand before max-step clamping.
 
         Args:
-            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE as
-                defined by ``TRANSFORMATION_WEIGHTS``.
+            deltas: Delta signal inputs keyed by dO (outcome gap), dL
+                (accuracy lift), dM (influence lift), dV (verification-capacity
+                offset), and dE (environment shift), as defined by
+                ``TRANSFORMATION_WEIGHTS``.
 
         Returns:
             The signed weighted demand before enforcement of ``max_step``.
@@ -268,8 +279,10 @@ class AdaptiveTransformationMatrix:
         """Clamp the raw weighted adaptation demand to the configured step limit.
 
         Args:
-            deltas: Delta signal inputs keyed by dO, dL, dM, dV, and dE as
-                defined by ``TRANSFORMATION_WEIGHTS``.
+            deltas: Delta signal inputs keyed by dO (outcome gap), dL
+                (accuracy lift), dM (influence lift), dV (verification-capacity
+                offset), and dE (environment shift), as defined by
+                ``TRANSFORMATION_WEIGHTS``.
 
         Returns:
             The signed adaptation request after max-step clamping.
@@ -616,7 +629,8 @@ def export_telemetry_csv(telemetry: List[TelemetryRow], path: str = "nexus_telem
     Args:
         telemetry: Per-cycle simulation telemetry rows.
         path: Output path for the CSV file. Relative paths are resolved from the
-            current working directory.
+            current working directory. The Weight Distribution column is
+            serialized to JSON before each row is written.
 
     Raises:
         OSError: If the file cannot be created or written, for example due to
