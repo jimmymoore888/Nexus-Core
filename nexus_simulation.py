@@ -247,15 +247,16 @@ class AdaptiveTransformationMatrix:
 
     max_step: float = 0.06
 
-    def transform(self, deltas: Dict[str, float]) -> float:
-        return _clamp(self.raw_demand(deltas), -self.max_step, self.max_step)
-
     def raw_demand(self, deltas: Dict[str, float]) -> float:
         """Return the weighted adaptation demand before max-step clamping."""
         return sum(
             TRANSFORMATION_WEIGHTS[key] * deltas.get(key, 0.0)
             for key in ("dO", "dL", "dM", "dV", "dE")
         )
+
+    def transform(self, deltas: Dict[str, float]) -> float:
+        """Clamp the raw weighted adaptation demand to the configured step limit."""
+        return _clamp(self.raw_demand(deltas), -self.max_step, self.max_step)
 
 
 @dataclass
@@ -513,6 +514,7 @@ class NexusSimulation:
             if cycles > 0
             else 0.0
         )
+        mean_da_dv_ratio = _safe_ratio(total_v_spent, total_v_earned)
         v_inflation_detected = (
             total_v_spent > total_v_earned + CONSTRAINT_TOLERANCE
             or self.core.verification_reserve < -CONSTRAINT_TOLERANCE
@@ -555,7 +557,7 @@ class NexusSimulation:
                 "Governance_Intervention_Rate": governance_intervention_rate,
                 "VInflation_Detected": v_inflation_detected,
                 "Recursion_Events": self.core.recursion_events,
-                "Mean_DA_DV_Ratio": mean_utilization,
+                "Mean_DA_DV_Ratio": mean_da_dv_ratio,
             },
             "success": success,
         }
