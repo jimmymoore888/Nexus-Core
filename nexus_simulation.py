@@ -135,6 +135,10 @@ def _safe_ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator
 
 
+def _risk_adjusted_capacity(delta_v_budget: float, delta_r: float) -> float:
+    return delta_v_budget / max(delta_r, 0.01)
+
+
 @dataclass
 class AdaptiveWeightEngine:
     """Tracks source reliability with bounded influence to prevent monopolies."""
@@ -317,7 +321,7 @@ class NexusCore:
         governance_interventions = 0
 
         if world == "hostile" and bool(event.get("hostile_spike", False)):
-            if self.containment_mode or self.recovery_mode or self.safe_lock:
+            if self.containment_mode or self.recovery_mode:
                 self.recursion_events += 1
             self.containment_mode = True
             self.recovery_mode = True
@@ -359,8 +363,8 @@ class NexusCore:
             desired_da *= 0.10
 
         delta_a_demand = abs(desired_da)
-        risk_adjusted_capacity = d_v / max(delta_r, 0.01)
-        max_allowed_da = min(max(0.0, d_v), max(0.0, risk_adjusted_capacity))
+        risk_adjusted_capacity = _risk_adjusted_capacity(d_v, delta_r)
+        max_allowed_da = max(0.0, d_v)
         attempted_violation = 0
         actual_violation = 0
 
@@ -470,12 +474,23 @@ class NexusSimulation:
         corrupted_detections = 0
         boring_adaptation = 0.0
         boring_cycles = 0
+        total_v_earned = 0.0
+        total_v_spent = 0.0
+        utilization_sum = 0.0
+        max_utilization = 0.0
+        governance_interventions_total = 0
 
         for cycle in range(1, cycles + 1):
             world = self._world_for_cycle(cycle, cycles)
             event = self._event(world)
             row = self.core.step(event, cycle)
             telemetry.append(row)
+            total_v_earned += float(row["delta_v_budget"])
+            total_v_spent += float(row["delta_a_granted"])
+            utilization = float(row["verification_utilization_pct"])
+            utilization_sum += utilization
+            max_utilization = max(max_utilization, utilization)
+            governance_interventions_total += int(row["governance_interventions"])
 
             if row["Corrupted Signal"]:
                 corrupted_detections += 1
@@ -488,28 +503,17 @@ class NexusSimulation:
         avg_boring_adaptation = (
             boring_adaptation / boring_cycles if boring_cycles > 0 else 0.0
         )
-        total_v_earned = sum(float(row["delta_v_budget"]) for row in telemetry)
-        total_v_spent = sum(float(row["delta_a_granted"]) for row in telemetry)
         mean_utilization = (
-            sum(float(row["verification_utilization_pct"]) for row in telemetry) / cycles
+            utilization_sum / cycles
             if cycles > 0
-            else 0.0
-        )
-        max_utilization = (
-            max(float(row["verification_utilization_pct"]) for row in telemetry)
-            if telemetry
             else 0.0
         )
         governance_intervention_rate = (
-            sum(int(row["governance_interventions"]) for row in telemetry) / cycles
+            governance_interventions_total / cycles
             if cycles > 0
             else 0.0
         )
-        mean_da_dv_ratio = (
-            sum(_safe_ratio(float(row["delta_a_granted"]), float(row["delta_v_budget"])) for row in telemetry) / cycles
-            if cycles > 0
-            else 0.0
-        )
+        mean_da_dv_ratio = mean_utilization
         v_inflation_detected = (
             total_v_spent > total_v_earned + CONSTRAINT_TOLERANCE
             or self.core.verification_reserve < -CONSTRAINT_TOLERANCE

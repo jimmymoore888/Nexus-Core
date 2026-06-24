@@ -10,6 +10,7 @@ from nexus_simulation import (
     MONOPOLY_THRESHOLD,
     NexusCore,
     NexusSimulation,
+    _risk_adjusted_capacity,
     export_telemetry_csv,
     run_simulation,
 )
@@ -100,7 +101,7 @@ class NexusSimulationTests(unittest.TestCase):
     def test_risk_adjusted_constraint_holds_for_every_cycle(self):
         result = run_simulation(cycles=25_000, seed=9)
         for row in result["telemetry"]:
-            hard_limit = row["delta_v_budget"] / max(row["delta_r"], 0.01)
+            hard_limit = _risk_adjusted_capacity(row["delta_v_budget"], row["delta_r"])
             self.assertLessEqual(
                 row["delta_a_granted"],
                 hard_limit + CONSTRAINT_TOLERANCE,
