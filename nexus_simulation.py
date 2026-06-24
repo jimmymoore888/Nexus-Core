@@ -13,6 +13,7 @@ BORING_ENV_SHIFT_THRESHOLD = 0.015
 BORING_DAMPENING_FACTOR = 0.05
 HOSTILE_SPIKE_PROBABILITY = 0.08
 HOSTILE_RECOVERY_CYCLES = 8
+CONSTRAINT_TOLERANCE = 1e-12
 
 
 class SimulationEvent(TypedDict):
@@ -218,6 +219,7 @@ class NexusCore:
     recovery_events: int = 0
     constraint_violations: int = 0
     hostile_recovery_cycles: int = 0
+    recovery_initiated: bool = False
 
     transform: AdaptiveTransformationMatrix = field(default_factory=AdaptiveTransformationMatrix)
     meta_verify: MetaVerificationMatrix = field(default_factory=MetaVerificationMatrix)
@@ -253,6 +255,7 @@ class NexusCore:
         if world == "hostile" and bool(event.get("hostile_spike", False)):
             self.containment_mode = True
             self.recovery_mode = True
+            self.recovery_initiated = True
             self.hostile_recovery_cycles = HOSTILE_RECOVERY_CYCLES
             self.containment_events += 1
 
@@ -260,10 +263,11 @@ class NexusCore:
             self.recovery_mode = True
             self.hostile_recovery_cycles -= 1
             if self.hostile_recovery_cycles == 0:
-                if self.containment_mode and self.recovery_mode:
+                if self.recovery_initiated:
                     self.recovery_events += 1
                 self.containment_mode = False
                 self.recovery_mode = False
+                self.recovery_initiated = False
 
         was_safe_locked = self.safe_lock
         if bool(meta["corrupted"]):
@@ -286,7 +290,10 @@ class NexusCore:
             desired_da *= 0.10
 
         max_da = max(0.0, d_v)
-        if abs(desired_da) > max_da + 1e-12:
+        if (
+            max_da > CONSTRAINT_TOLERANCE
+            and abs(desired_da) > max_da + CONSTRAINT_TOLERANCE
+        ):
             self.constraint_violations += 1
         applied_da = _clamp(desired_da, -max_da, max_da)
 
