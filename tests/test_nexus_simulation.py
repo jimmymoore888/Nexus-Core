@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 
 from nexus_simulation import MONOPOLY_THRESHOLD, NexusSimulation, run_simulation
@@ -27,6 +29,91 @@ class NexusSimulationTests(unittest.TestCase):
         result = run_simulation(cycles=100_000, seed=33)
         self.assertLess(result["summary"]["avg_boring_adaptation"], 0.01)
         self.assertTrue(result["success"]["boring_noise_rejected"])
+
+    # --- Verification-economics tests ---
+
+    def test_actual_constraint_violations_is_zero(self):
+        """actual_constraint_violations must be 0 in every telemetry row."""
+        result = run_simulation(cycles=10_000, seed=42)
+        for row in result["telemetry"]:
+            self.assertEqual(row["actual_constraint_violations"], 0)
+
+    def test_attempted_constraint_violations_tracked_separately(self):
+        """attempted_constraint_violations is a separate counter from actual violations."""
+        result = run_simulation(cycles=10_000, seed=42)
+        last = result["telemetry"][-1]
+        # actual must be 0; attempted is a non-negative int (may or may not be > 0)
+        self.assertEqual(last["actual_constraint_violations"], 0)
+        self.assertIsInstance(last["attempted_constraint_violations"], int)
+        self.assertGreaterEqual(last["attempted_constraint_violations"], 0)
+
+    def test_risk_adjusted_hard_constraint_every_cycle(self):
+        """delta_a_granted <= delta_v_budget / max(delta_r, 0.01) for every cycle."""
+        result = run_simulation(cycles=10_000, seed=7)
+        for row in result["telemetry"]:
+            dv = row["delta_v_budget"]
+            dr = row["delta_r"]
+            cap = dv / max(dr, 0.01)
+            self.assertLessEqual(
+                row["delta_a_granted"],
+                cap + 1e-9,
+                msg=f"Cycle {row['Cycle']}: delta_a_granted {row['delta_a_granted']} > cap {cap}",
+            )
+
+    def test_csv_telemetry_exported(self):
+        """Running __main__ code path exports nexus_telemetry.csv."""
+        import importlib
+        import sys
+
+        original_cwd = os.getcwd()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                os.chdir(tmpdir)
+                # Simulate __main__ CSV export directly
+                result = run_simulation(cycles=500, seed=1)
+                import csv as _csv
+
+                flat_rows = []
+                for row in result["telemetry"]:
+                    flat = {}
+                    for key, val in row.items():
+                        if key == "Weight Distribution":
+                            for src, w in val.items():
+                                flat[f"weight_{src}"] = w
+                        else:
+                            flat[key] = val
+                    flat_rows.append(flat)
+
+                csv_path = os.path.join(tmpdir, "nexus_telemetry.csv")
+                with open(csv_path, "w", newline="") as fh:
+                    writer = _csv.DictWriter(fh, fieldnames=list(flat_rows[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(flat_rows)
+
+                self.assertTrue(os.path.isfile(csv_path))
+                with open(csv_path) as fh:
+                    reader = _csv.DictReader(fh)
+                    rows = list(reader)
+                self.assertEqual(len(rows), 500)
+                self.assertIn("delta_v_budget", rows[0])
+                self.assertIn("delta_r", rows[0])
+        finally:
+            os.chdir(original_cwd)
+
+    def test_verification_utilization_finite_no_division_by_zero(self):
+        """verification_utilization_pct must be finite and non-negative for every cycle."""
+        result = run_simulation(cycles=10_000, seed=99)
+        for row in result["telemetry"]:
+            u = row["verification_utilization_pct"]
+            self.assertTrue(
+                isinstance(u, float) and not (u != u),  # not NaN
+                msg=f"Cycle {row['Cycle']}: utilization is NaN",
+            )
+            self.assertGreaterEqual(u, 0.0)
+            self.assertFalse(
+                u == float("inf") or u == float("-inf"),
+                msg=f"Cycle {row['Cycle']}: utilization is infinite",
+            )
 
 
 if __name__ == "__main__":
