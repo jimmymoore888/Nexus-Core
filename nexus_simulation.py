@@ -55,6 +55,16 @@ TelemetryRow = TypedDict(
         "A(n)": float,
         "ΔA": float,
         "ΔV": float,
+        "delta_v_budget": float,
+        "delta_a_demand": float,
+        "delta_a_granted": float,
+        "delta_r": float,
+        "verification_utilization_pct": float,
+        "verification_reserve": float,
+        "verification_debt": float,
+        "governance_interventions": int,
+        "attempted_constraint_violations": int,
+        "actual_constraint_violations": int,
         "Constraint Margin": float,
         "Weight Distribution": Dict[str, float],
         "Truth Score": float,
@@ -81,6 +91,16 @@ class SimulationSummary(TypedDict):
     corrupted_detections: int
     avg_boring_adaptation: float
     max_weight: float
+    Total_VEarned: float
+    Total_VSpent: float
+    VReserve_Final: float
+    VDebt_Final: float
+    Mean_Utilization: float
+    Max_Utilization: float
+    Governance_Intervention_Rate: float
+    VInflation_Detected: bool
+    Recursion_Events: int
+    Mean_DA_DV_Ratio: float
 
 
 class SimulationSuccess(TypedDict):
@@ -107,6 +127,12 @@ class SimulationResult(TypedDict):
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    if denominator <= CONSTRAINT_TOLERANCE:
+        return 0.0
+    return numerator / denominator
 
 
 @dataclass
@@ -242,6 +268,9 @@ class NexusCore:
     recovery_events: int = 0
     attempted_constraint_violations: int = 0
     actual_constraint_violations: int = 0
+    verification_reserve: float = 0.0
+    verification_debt: float = 0.0
+    recursion_events: int = 0
     hostile_recovery_cycles: int = 0
     recovery_initiated: bool = False
 
@@ -271,6 +300,11 @@ class NexusCore:
 
         meta = self.meta_verify.evaluate(source_signals, self.weights.weights)
         d_v = float(meta["verification_capacity"])
+        delta_r = _clamp(
+            meta["divergence"] / max(self.meta_verify.divergence_threshold, 0.01),
+            0.0,
+            1.0,
+        )
 
         deltas = {
             "dO": truth - prediction,
@@ -279,21 +313,18 @@ class NexusCore:
             "dV": d_v - 0.5,
             "dE": float(event.get("environment_shift", 0.0)),
         }
-        # raw_demand is the unclamped weighted sum of delta signals, computed before
-        # max_step enforcement and before all safety-dampening mechanisms (hostile-spike
-        # suppression, safe-lock 0.10× multiplier, boring-world dampening).  It
-        # represents the raw signal-level adaptation intent and is used to detect
-        # attempted violations: cases where the underlying forces would have exceeded
-        # the verification bound even if the layered safety system had not intervened.
-        raw_demand = self.transform.raw_demand(deltas)
         desired_da = self.transform.transform(deltas)
+        governance_interventions = 0
 
         if world == "hostile" and bool(event.get("hostile_spike", False)):
+            if self.containment_mode or self.recovery_mode or self.safe_lock:
+                self.recursion_events += 1
             self.containment_mode = True
             self.recovery_mode = True
             self.recovery_initiated = True
             self.hostile_recovery_cycles = HOSTILE_RECOVERY_CYCLES
             self.containment_events += 1
+            governance_interventions += 1
 
         if self.hostile_recovery_cycles > 0:
             self.recovery_mode = True
@@ -301,6 +332,7 @@ class NexusCore:
             if self.hostile_recovery_cycles == 0:
                 if self.recovery_initiated:
                     self.recovery_events += 1
+                    governance_interventions += 1
                 self.containment_mode = False
                 self.recovery_mode = False
                 self.recovery_initiated = False
@@ -310,6 +342,7 @@ class NexusCore:
             self.safe_lock = True
             if not was_safe_locked:
                 self.safe_lock_events += 1
+                governance_interventions += 1
         else:
             self.safe_lock = False
             if was_safe_locked:
@@ -325,20 +358,27 @@ class NexusCore:
         if self.safe_lock or self.containment_mode:
             desired_da *= 0.10
 
-        max_allowed_da = max(0.0, d_v)
+        delta_a_demand = abs(desired_da)
+        risk_adjusted_capacity = d_v / max(delta_r, 0.01)
+        max_allowed_da = min(max(0.0, d_v), max(0.0, risk_adjusted_capacity))
+        attempted_violation = 0
+        actual_violation = 0
 
-        # Attempted: raw unclamped demand would have exceeded the verification bound.
-        if abs(raw_demand) > max_allowed_da + CONSTRAINT_TOLERANCE:
+        if delta_a_demand > max_allowed_da + CONSTRAINT_TOLERANCE:
             self.attempted_constraint_violations += 1
+            attempted_violation = 1
 
         applied_da = _clamp(desired_da, -max_allowed_da, max_allowed_da)
+        delta_a_granted = abs(applied_da)
 
-        # Actual: applied step still exceeds bound after enforcement (invariant check).
-        if abs(applied_da) > max_allowed_da + CONSTRAINT_TOLERANCE:
+        if delta_a_granted > max_allowed_da + CONSTRAINT_TOLERANCE:
             self.actual_constraint_violations += 1
+            actual_violation = 1
 
-        # Keep enforcement active even when we log an attempted over-bound adaptation.
-        self.constraint_margin = max_allowed_da - abs(applied_da)
+        verification_utilization_pct = _safe_ratio(delta_a_granted, d_v)
+        self.verification_reserve += max(0.0, d_v - delta_a_granted)
+        self.verification_debt += max(0.0, delta_a_demand - max_allowed_da)
+        self.constraint_margin = max_allowed_da - delta_a_granted
         self.next_adaptation_state = self._bounded_state(self.adaptation_state + applied_da)
         a_n = self.adaptation_state
         self.adaptation_state = self.next_adaptation_state
@@ -346,8 +386,18 @@ class NexusCore:
         return {
             "Cycle": cycle,
             "A(n)": a_n,
-            "ΔA": abs(applied_da),
-            "ΔV": max_allowed_da,
+            "ΔA": delta_a_granted,
+            "ΔV": d_v,
+            "delta_v_budget": d_v,
+            "delta_a_demand": delta_a_demand,
+            "delta_a_granted": delta_a_granted,
+            "delta_r": delta_r,
+            "verification_utilization_pct": verification_utilization_pct,
+            "verification_reserve": self.verification_reserve,
+            "verification_debt": self.verification_debt,
+            "governance_interventions": governance_interventions,
+            "attempted_constraint_violations": attempted_violation,
+            "actual_constraint_violations": actual_violation,
             "Constraint Margin": self.constraint_margin,
             "Weight Distribution": dict(self.weights.weights),
             "Truth Score": verification["truth"],
@@ -438,6 +488,32 @@ class NexusSimulation:
         avg_boring_adaptation = (
             boring_adaptation / boring_cycles if boring_cycles > 0 else 0.0
         )
+        total_v_earned = sum(float(row["delta_v_budget"]) for row in telemetry)
+        total_v_spent = sum(float(row["delta_a_granted"]) for row in telemetry)
+        mean_utilization = (
+            sum(float(row["verification_utilization_pct"]) for row in telemetry) / cycles
+            if cycles > 0
+            else 0.0
+        )
+        max_utilization = (
+            max(float(row["verification_utilization_pct"]) for row in telemetry)
+            if telemetry
+            else 0.0
+        )
+        governance_intervention_rate = (
+            sum(int(row["governance_interventions"]) for row in telemetry) / cycles
+            if cycles > 0
+            else 0.0
+        )
+        mean_da_dv_ratio = (
+            sum(_safe_ratio(float(row["delta_a_granted"]), float(row["delta_v_budget"])) for row in telemetry) / cycles
+            if cycles > 0
+            else 0.0
+        )
+        v_inflation_detected = (
+            total_v_spent > total_v_earned + CONSTRAINT_TOLERANCE
+            or self.core.verification_reserve < -CONSTRAINT_TOLERANCE
+        )
 
         success = {
             "zero_constraint_violations": self.core.actual_constraint_violations == 0,
@@ -467,6 +543,16 @@ class NexusSimulation:
                 "corrupted_detections": corrupted_detections,
                 "avg_boring_adaptation": avg_boring_adaptation,
                 "max_weight": max_weight,
+                "Total_VEarned": total_v_earned,
+                "Total_VSpent": total_v_spent,
+                "VReserve_Final": self.core.verification_reserve,
+                "VDebt_Final": self.core.verification_debt,
+                "Mean_Utilization": mean_utilization,
+                "Max_Utilization": max_utilization,
+                "Governance_Intervention_Rate": governance_intervention_rate,
+                "VInflation_Detected": v_inflation_detected,
+                "Recursion_Events": self.core.recursion_events,
+                "Mean_DA_DV_Ratio": mean_da_dv_ratio,
             },
             "success": success,
         }
@@ -482,6 +568,16 @@ _TELEMETRY_CSV_FIELDNAMES = [
     "A(n)",
     "ΔA",
     "ΔV",
+    "delta_v_budget",
+    "delta_a_demand",
+    "delta_a_granted",
+    "delta_r",
+    "verification_utilization_pct",
+    "verification_reserve",
+    "verification_debt",
+    "governance_interventions",
+    "attempted_constraint_violations",
+    "actual_constraint_violations",
     "Constraint Margin",
     "Weight Distribution",
     "Truth Score",
@@ -525,6 +621,19 @@ if __name__ == "__main__":
     print(f"Actual Constraint Violations: {result['summary']['actual_constraint_violations']}")
     print(f"Corrupted Detections: {result['summary']['corrupted_detections']}")
     print(f"Recovery Events: {result['summary']['recovery_events']}")
+    print(f"Total V Earned: {result['summary']['Total_VEarned']:.6f}")
+    print(f"Total V Spent: {result['summary']['Total_VSpent']:.6f}")
+    print(f"V Reserve Final: {result['summary']['VReserve_Final']:.6f}")
+    print(f"V Debt Final: {result['summary']['VDebt_Final']:.6f}")
+    print(f"Mean Utilization: {result['summary']['Mean_Utilization']:.6f}")
+    print(f"Max Utilization: {result['summary']['Max_Utilization']:.6f}")
+    print(
+        f"Governance Intervention Rate: "
+        f"{result['summary']['Governance_Intervention_Rate']:.6f}"
+    )
+    print(f"V Inflation Detected: {result['summary']['VInflation_Detected']}")
+    print(f"Recursion Events: {result['summary']['Recursion_Events']}")
+    print(f"Mean ΔA/ΔV Ratio: {result['summary']['Mean_DA_DV_Ratio']:.6f}")
     print(f"NO DRIFT: {all(success.values())}")
     export_telemetry_csv(result["telemetry"])
     print("Telemetry exported to nexus_telemetry.csv")
