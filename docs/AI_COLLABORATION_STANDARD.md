@@ -6,8 +6,14 @@ Define how ChatGPT, Meta AI, GitHub Copilot, and any future AI assistant must co
 
 ## Core principle
 
-Nexus-Core is governed by ΔA ≤ ΔV.
+Nexus-Core is governed by ΔA ≤ ΔV (Delta-A less than or equal to Delta-V).
 Adaptation may only occur at the rate it can be verified.
+
+In this standard, ΔA (Delta-A) means applied adaptation, ΔV (Delta-V) means available verification capacity, and ΔR (Delta-R) means the risk modifier used to bound adaptation.
+
+Verification reserve, verification debt, and Safe Lock refer to the repository's existing telemetry and safety-control concepts.
+SATDS refers to safety-critical adaptation and test decision surfaces, Napalm tests are adversarial stress tests for safety boundaries, and Byzantine consensus refers to multi-source disagreement handling.
+Each of these governance concepts requires explicit review whenever a proposed change touches it.
 
 ## AI role separation
 
@@ -44,7 +50,7 @@ Adaptation may only occur at the rate it can be verified.
 1. Define the proposed change.
 2. Identify whether it affects ΔA, ΔV, ΔR, verification reserve, verification debt, Safe Lock, SATDS, Napalm tests, or Byzantine consensus.
 3. If it affects governance, require explicit review before implementation.
-4. Implement only after the change is measurable.
+4. Implement only after the change is measurable through a defined telemetry, test, or report path.
 5. Add or update telemetry.
 6. Add or update tests.
 7. Generate reports when applicable.
