@@ -17,6 +17,11 @@ SCENARIOS: Tuple[Tuple[int, int], ...] = (
     (1, 3),
     (0, 4),
 )
+MALICIOUS_INFLATION_MIN = 0.7
+MALICIOUS_INFLATION_MAX = 1.3
+DEGRADED_TRUST_THRESHOLD = 0.25
+HIGH_VARIANCE_THRESHOLD = 0.3
+ZERO_THRESHOLD = 1e-12
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -47,7 +52,9 @@ class ByzantineScenarioRunner:
 
     def _malicious_output(self, base: float) -> Dict[str, float]:
         honest_like = self._honest_output(base)
-        inflated_delta_v = honest_like["delta_v"] + self.random.uniform(0.7, 1.3)
+        inflated_delta_v = honest_like["delta_v"] + self.random.uniform(
+            MALICIOUS_INFLATION_MIN, MALICIOUS_INFLATION_MAX
+        )
         false_confidence = _clamp(1.0 - honest_like["confidence"] + self.random.uniform(-0.05, 0.05))
         inverted_risk = _clamp(1.0 - honest_like["risk"])
         return {
@@ -87,8 +94,8 @@ class ByzantineScenarioRunner:
             consensus_confidence = statistics.median(confidence_values)
             consensus_risk = statistics.median(risk_values)
 
-            degraded_trust = middle_gap > 0.25
-            high_consensus_variance = consensus_variance > 0.3
+            degraded_trust = middle_gap > DEGRADED_TRUST_THRESHOLD
+            high_consensus_variance = consensus_variance > HIGH_VARIANCE_THRESHOLD
             external_safe_lock = degraded_trust or high_consensus_variance
             budget_multiplier = 0.5 if external_safe_lock else 1.0
 
@@ -124,7 +131,11 @@ class ByzantineScenarioRunner:
             adjusted_demand = min(float(row["delta_a_demand"]), adjusted_budget)
             debt += max(0.0, adjusted_demand - adjusted_budget)
 
-            ratio = (adjusted_granted / adjusted_budget) if adjusted_budget > 1e-12 else 0.0
+            ratio = (
+                (adjusted_granted / adjusted_budget)
+                if adjusted_budget > ZERO_THRESHOLD
+                else 0.0
+            )
             da_dv_ratios.append(ratio)
 
         label = f"byzantine_{self.honest_verifiers}h{self.malicious_verifiers}m"
