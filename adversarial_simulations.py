@@ -28,10 +28,11 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
-def _telemetry_value(row: Dict[str, float | int], canonical_key: str, compact_key: str) -> float:
-    if canonical_key in row:
-        return float(row[canonical_key])
-    return float(row[compact_key])
+def _extract_telemetry(row: Dict[str, float | int]) -> Tuple[float, float, float]:
+    budget = float(row["delta_v_budget"]) if "delta_v_budget" in row else float(row["ΔV"])
+    granted = float(row["delta_a_granted"]) if "delta_a_granted" in row else float(row["ΔA"])
+    demand = float(row["delta_a_demand"]) if "delta_a_demand" in row else float(row["ΔA"])
+    return budget, granted, demand
 
 
 @dataclass
@@ -130,16 +131,12 @@ class ByzantineScenarioRunner:
                 cycle,
             )
 
-            adjusted_budget = _telemetry_value(row, "delta_v_budget", "ΔV")
-            adjusted_granted = min(_telemetry_value(row, "delta_a_granted", "ΔA"), adjusted_budget)
+            _, granted, demand = _extract_telemetry(row)
+            adjusted_budget = _clamp(consensus_delta_v * budget_multiplier)
+            adjusted_granted = min(granted, adjusted_budget)
             reserve += max(0.0, adjusted_budget - adjusted_granted)
 
-            adjusted_demand = (
-                float(row["delta_a_demand"])
-                if "delta_a_demand" in row
-                else _telemetry_value(row, "delta_a_granted", "ΔA")
-            )
-            debt += max(0.0, adjusted_demand - adjusted_budget)
+            debt += max(0.0, demand - adjusted_budget)
 
             ratio = (
                 (adjusted_granted / adjusted_budget)

@@ -5,3 +5,5 @@
 | byzantine_2h2m | 0.115740 | 0.076532 | 54341.366567 | 0.000000 | 0 | 100000 | 100000 | 0.261893 |
 | byzantine_1h3m | 0.084174 | 0.062179 | 90691.215416 | 0.000000 | 0 | 20626 | 20626 | 0.205037 |
 | byzantine_0h4m | 0.081558 | 0.061145 | 92383.394788 | 0.000000 | 0 | 11558 | 11558 | 0.023120 |
+
+Median consensus detects disagreement, but coordinated malicious agreement can lower variance. Future distributed verification design must include identity, reputation, historical consistency, and trust penalties.
