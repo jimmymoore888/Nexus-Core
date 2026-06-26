@@ -1,0 +1,10 @@
+{
+  "max_da_dv_ratio": 0.10035526969392015,
+  "mean_da_dv_ratio": 0.07757971406921123,
+  "final_verification_reserve": 65336.007094136745,
+  "final_verification_debt": 0.0,
+  "actual_constraint_violations": 0,
+  "governance_intervention_count": 6273,
+  "cycles_in_safe_lock": 6273,
+  "delta_v_consensus_variance": 0.19339601667769352
+}
