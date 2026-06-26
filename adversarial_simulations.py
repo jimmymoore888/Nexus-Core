@@ -28,6 +28,12 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
+def _telemetry_value(row: Dict[str, float | int], canonical_key: str, compact_key: str) -> float:
+    if canonical_key in row:
+        return float(row[canonical_key])
+    return float(row[compact_key])
+
+
 @dataclass
 class ScenarioResult:
     label: str
@@ -124,11 +130,15 @@ class ByzantineScenarioRunner:
                 cycle,
             )
 
-            adjusted_budget = _clamp(consensus_delta_v * budget_multiplier)
-            adjusted_granted = min(float(row["delta_a_granted"]), adjusted_budget)
+            adjusted_budget = _telemetry_value(row, "delta_v_budget", "ΔV")
+            adjusted_granted = min(_telemetry_value(row, "delta_a_granted", "ΔA"), adjusted_budget)
             reserve += max(0.0, adjusted_budget - adjusted_granted)
 
-            adjusted_demand = min(float(row["delta_a_demand"]), adjusted_budget)
+            adjusted_demand = (
+                float(row["delta_a_demand"])
+                if "delta_a_demand" in row
+                else _telemetry_value(row, "delta_a_granted", "ΔA")
+            )
             debt += max(0.0, adjusted_demand - adjusted_budget)
 
             ratio = (
@@ -200,7 +210,12 @@ def _write_comparison_markdown(path: str, scenario_summaries: Dict[str, Dict[str
         )
 
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(rows) + "\n")
+        handle.write("\n".join(rows) + "\n\n")
+        handle.write(
+            "Median consensus detects disagreement, but coordinated malicious agreement can lower variance. "
+            "Future distributed verification design must include identity, reputation, historical consistency, "
+            "and trust penalties.\n"
+        )
 
 
 def run_all_scenarios(cycles: int = 100_000, seed: int = 7) -> Dict[str, Dict[str, float | int]]:
