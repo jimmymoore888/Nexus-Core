@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import csv
 import json
+import math
+import random
 from dataclasses import dataclass, field
 from statistics import median
 from typing import Dict, List, TypedDict
-import math
-import random
 
 
 SOURCE_NAMES = ("sensor", "log", "consensus", "external")
@@ -16,6 +16,7 @@ BORING_DAMPENING_FACTOR = 0.05
 HOSTILE_SPIKE_PROBABILITY = 0.08
 HOSTILE_RECOVERY_CYCLES = 8
 CONSTRAINT_TOLERANCE = 1e-12
+MIN_VERIFICATION_BUDGET = 1e-12
 MIN_ADAPTATION_STATE = -3.0
 MAX_ADAPTATION_STATE = 3.0
 SIMULATION_VERSION = "Simulation Program v1.4"
@@ -55,16 +56,6 @@ TelemetryRow = TypedDict(
         "A(n)": float,
         "ΔA": float,
         "ΔV": float,
-        "delta_v_budget": float,
-        "delta_a_demand": float,
-        "delta_a_granted": float,
-        "delta_r": float,
-        "verification_utilization_pct": float,
-        "verification_reserve": float,
-        "verification_debt": float,
-        "governance_interventions": int,
-        "attempted_constraint_violations": int,
-        "actual_constraint_violations": int,
         "Constraint Margin": float,
         "Weight Distribution": Dict[str, float],
         "Truth Score": float,
@@ -77,6 +68,16 @@ TelemetryRow = TypedDict(
         "Actual Constraint Violations": int,
         "Corrupted Signal": bool,
         "World": str,
+        "delta_v_budget": float,
+        "delta_a_demand": float,
+        "delta_a_granted": float,
+        "delta_r": float,
+        "verification_utilization_pct": float,
+        "verification_reserve": float,
+        "verification_debt": float,
+        "governance_interventions": int,
+        "attempted_constraint_violations": int,
+        "actual_constraint_violations": int,
     },
 )
 
@@ -113,6 +114,19 @@ class SimulationSuccess(TypedDict):
     stable_100k_cycles: bool
 
 
+class VEconSummary(TypedDict):
+    Total_VEarned: float
+    Total_VSpent: float
+    VReserve_Final: float
+    VDebt_Final: float
+    Mean_Utilization: float
+    Max_Utilization: float
+    Governance_Intervention_Rate: float
+    VInflation_Detected: bool
+    Recursion_Events: int
+    Mean_DA_DV_Ratio: float
+
+
 class SimulationResult(TypedDict):
     project: str
     framework: str
@@ -123,6 +137,7 @@ class SimulationResult(TypedDict):
     telemetry: List[TelemetryRow]
     summary: SimulationSummary
     success: SimulationSuccess
+    ve_summary: VEconSummary
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -337,7 +352,8 @@ class NexusCore:
         meta = self.meta_verify.evaluate(source_signals, self.weights.weights)
         d_v = float(meta["verification_capacity"])
         delta_r = _clamp(
-            meta["divergence"] / max(self.meta_verify.divergence_threshold, 0.01),
+            meta["divergence"]
+            / max(self.meta_verify.divergence_threshold, MIN_VERIFICATION_BUDGET),
             0.0,
             1.0,
         )
@@ -351,6 +367,9 @@ class NexusCore:
         }
         desired_da = self.transform.transform(deltas)
         governance_interventions = 0
+
+        # Risk-adjusted verification capacity (hard constraint bound)
+        risk_adjusted_capacity = _risk_adjusted_capacity(d_v, delta_r)
 
         if world == "hostile" and bool(event.get("hostile_spike", False)):
             if self.containment_mode or self.recovery_mode:
@@ -395,7 +414,6 @@ class NexusCore:
             desired_da *= 0.10
 
         delta_a_demand = abs(desired_da)
-        risk_adjusted_capacity = _risk_adjusted_capacity(d_v, delta_r)
         max_allowed_da = max(0.0, d_v)
         attempted_violation = 0
         actual_violation = 0
@@ -414,8 +432,13 @@ class NexusCore:
         verification_utilization_pct = _safe_ratio(delta_a_granted, d_v)
         self.verification_reserve += max(0.0, d_v - delta_a_granted)
         self.verification_debt += max(0.0, delta_a_demand - max_allowed_da)
+        raw_next = self.adaptation_state + applied_da
+        clamped_next = self._bounded_state(raw_next)
+        if abs(clamped_next - raw_next) > CONSTRAINT_TOLERANCE:
+            self.recursion_events += 1
+
         self.constraint_margin = max_allowed_da - delta_a_granted
-        self.next_adaptation_state = self._bounded_state(self.adaptation_state + applied_da)
+        self.next_adaptation_state = clamped_next
         a_n = self.adaptation_state
         self.adaptation_state = self.next_adaptation_state
 
@@ -555,6 +578,31 @@ class NexusSimulation:
             "stable_100k_cycles": cycles >= 100_000,
         }
 
+        total_v_earned = sum(row["delta_v_budget"] for row in telemetry)
+        total_v_spent = sum(row["delta_a_granted"] for row in telemetry)
+        utilizations = [row["verification_utilization_pct"] for row in telemetry]
+        da_dv_ratios = [
+            row["delta_a_demand"] / row["delta_v_budget"]
+            for row in telemetry
+            if row["delta_v_budget"] > 1e-12
+        ]
+
+        ve_summary: VEconSummary = {
+            "Total_VEarned": total_v_earned,
+            "Total_VSpent": total_v_spent,
+            "VReserve_Final": self.core.verification_reserve,
+            "VDebt_Final": self.core.verification_debt,
+            "Mean_Utilization": sum(utilizations) / len(utilizations) if utilizations else 0.0,
+            "Max_Utilization": max(utilizations) if utilizations else 0.0,
+            "Governance_Intervention_Rate": (
+                (self.core.safe_lock_events + self.core.containment_events + self.core.recovery_events)
+                / cycles
+            ),
+            "VInflation_Detected": bool(self.core.verification_debt > 0.0),
+            "Recursion_Events": self.core.recursion_events,
+            "Mean_DA_DV_Ratio": sum(da_dv_ratios) / len(da_dv_ratios) if da_dv_ratios else 0.0,
+        }
+
         return {
             "project": "Nexus-Core",
             "framework": "Adaptive Continuity Framework",
@@ -585,6 +633,7 @@ class NexusSimulation:
                 "Mean_DA_DV_Ratio": mean_da_dv_ratio,
             },
             "success": success,
+            "ve_summary": ve_summary,
         }
 
 
@@ -652,6 +701,8 @@ def export_telemetry_csv(telemetry: List[TelemetryRow], path: str = "nexus_telem
 if __name__ == "__main__":
     result = run_simulation()
     success = result["success"]
+    ve = result["ve_summary"]
+
     print("Nexus-Core Adaptive Continuity Framework v1.4")
     print(f"Cycles: {result['cycles']}")
     print(f"Final State: {result['final_state']:.6f}")
