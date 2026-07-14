@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900">
+  <defs>
+    <style>
+      .header { font-family: sans-serif; font-size: 24px; font-weight: bold; }
+      .section-title { font-family: sans-serif; font-size: 16px; font-weight: bold; }
+      .label { font-family: monospace; font-size: 11px; }
+      .field { font-family: monospace; font-size: 10px; }
+      .formula { font-family: serif; font-size: 14px; font-weight: bold; }
+      .box { stroke: #333; stroke-width: 2; fill: #f9f9f9; }
+      .box-decision { stroke: #0066cc; stroke-width: 2; fill: #e6f2ff; }
+      .box-evidence { stroke: #009900; stroke-width: 2; fill: #e6ffe6; }
+      .box-flow { stroke: #990000; stroke-width: 2; fill: #ffe6e6; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .decision-arrow { stroke-width: 2; marker-end: url(#arrowhead-decision); }
+      .grid-line { stroke: #ddd; stroke-width: 1; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+    <marker id="arrowhead-decision" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#0066cc" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="700" y="40" class="header" text-anchor="middle">Nexus Command Center Verification Wireframe v0.2</text>
+  <text x="700" y="65" class="label" text-anchor="middle">NEXUS-CC-WF-001 — Constitutional Law: ΔA ≤ ΔV</text>
+
+  <!-- Top Section: Fundamental Law -->
+  <rect x="50" y="90" width="1300" height="60" class="box" rx="4" />
+  <text x="70" y="110" class="section-title">Foundational Law</text>
+  <text x="70" y="135" class="formula">ΔA ≤ ΔV</text>
+  <text x="300" y="110" class="label">Where:</text>
+  <text x="300" y="128" class="label">ΔA = Adaptation Requested | ΔV = Verification Capacity</text>
+  <text x="300" y="143" class="label">Violation → SAFE_LOCK</text>
+
+  <!-- Left Column: Evidence Lineage Input -->
+  <text x="70" y="185" class="section-title">Evidence Lineage</text>
+
+  <!-- Evidence Source -->
+  <rect x="50" y="200" width="280" height="120" class="box-evidence" rx="4" />
+  <text x="65" y="220" class="label" font-weight="bold">source</text>
+  <text x="65" y="240" class="field">• runtime_telemetry</text>
+  <text x="65" y="256" class="field">• audit_log</text>
+  <text x="65" y="272" class="field">• critical_calendar_telemetry</text>
+  <text x="65" y="288" class="field">• recovery_validation</text>
+  <text x="65" y="304" class="field">• deployment_history</text>
+
+  <!-- Evidence Validation Chain -->
+  <rect x="50" y="340" width="280" height="160" class="box-evidence" rx="4" />
+  <text x="65" y="360" class="label" font-weight="bold">validation</text>
+  <text x="65" y="378" class="field">evidence_id: EVD-001</text>
+  <text x="65" y="394" class="field">timestamp: ISO 8601</text>
+  <text x="65" y="410" class="field">status: VALID | EXPIRED</text>
+  <text x="65" y="426" class="field">           | UNVERIFIED</text>
+  <text x="65" y="450" class="label" font-weight="bold">EXAMPLE (CAL-002):</text>
+  <text x="65" y="468" class="field">evidence_id: EVD-003</text>
+  <text x="65" y="484" class="field">expires_at: 2026-07-13T20:00Z</text>
+  <text x="65" y="500" class="field">status: EXPIRED (fail-closed)</text>
+
+  <!-- Center Column: Decision Logic -->
+  <text x="390" y="185" class="section-title">Decision Engine</text>
+
+  <!-- Input Request -->
+  <rect x="360" y="200" width="280" height="100" class="box" rx="4" />
+  <text x="375" y="220" class="label" font-weight="bold">verification_request</text>
+  <text x="375" y="238" class="field">target_id: string</text>
+  <text x="375" y="254" class="field">requested_authority: string</text>
+  <text x="375" y="270" class="field">requested_delta_a: float [0,1]</text>
+  <text x="375" y="286" class="field">evidence_items: []</text>
+
+  <!-- Decision Calculation -->
+  <rect x="360" y="320" width="280" height="180" class="box-flow" rx="4" />
+  <text x="375" y="340" class="label" font-weight="bold">calculate</text>
+  <text x="375" y="358" class="field">delta_v ← aggregate_evidence()</text>
+  <text x="375" y="374" class="field">IF expired_evidence:</text>
+  <text x="375" y="390" class="field">  exclude_from_calculation()</text>
+  <text x="375" y="406" class="field">  recalculate_delta_v()</text>
+  <text x="375" y="422" class="field">verification_margin ← ΔV - ΔA</text>
+  <text x="375" y="438" class="field">risk_score ← aggregate_risk()</text>
+  <text x="375" y="454" class="field">validation_result ← status</text>
+  <text x="375" y="470" class="field">IF margin &lt; 0:</text>
+  <text x="375" y="486" class="field">  decision ← REJECT or SAFE_LOCK</text>
+
+  <!-- Arrow: Evidence to Decision -->
+  <path d="M 330 280 L 360 320" class="arrow" />
+  <text x="335" y="305" class="label">lineage</text>
+
+  <!-- Right Column: Five Decision Outcomes -->
+  <text x="750" y="185" class="section-title">Five Authoritative Decisions</text>
+
+  <!-- GRANT -->
+  <rect x="720" y="200" width="150" height="80" class="box-decision" rx="4" />
+  <text x="735" y="220" class="label" font-weight="bold">GRANT</text>
+  <text x="735" y="238" class="field">ΔA ≤ ΔV satisfied</text>
+  <text x="735" y="254" class="field">verified: true</text>
+  <text x="735" y="270" class="field">Example: CAL-001</text>
+
+  <!-- THROTTLE -->
+  <rect x="880" y="200" width="150" height="80" class="box-decision" rx="4" />
+  <text x="895" y="220" class="label" font-weight="bold">THROTTLE</text>
+  <text x="895" y="238" class="field">Capacity limited</text>
+  <text x="895" y="254" class="field">Request rate-reduced</text>
+  <text x="895" y="270" class="field">verified: partial</text>
+
+  <!-- REJECT -->
+  <rect x="1040" y="200" width="150" height="80" class="box-decision" rx="4" />
+  <text x="1055" y="220" class="label" font-weight="bold">REJECT</text>
+  <text x="1055" y="238" class="field">ΔA &gt; ΔV</text>
+  <text x="1055" y="254" class="field">verified: false</text>
+  <text x="1055" y="270" class="field">Example: CAL-002</text>
+
+  <!-- REVERSE -->
+  <rect x="1200" y="200" width="150" height="80" class="box-decision" rx="4" />
+  <text x="1215" y="220" class="label" font-weight="bold">REVERSE</text>
+  <text x="1215" y="238" class="field">Rollback active</text>
+  <text x="1215" y="254" class="field">Restore prior state</text>
+  <text x="1215" y="270" class="field">verified: false</text>
+
+  <!-- SAFE_LOCK -->
+  <rect x="860" y="300" width="280" height="80" class="box-decision" rx="4" />
+  <text x="875" y="320" class="label" font-weight="bold">SAFE_LOCK</text>
+  <text x="875" y="338" class="field">Systemic governance failure</text>
+  <text x="875" y="354" class="field">verified: false</text>
+  <text x="875" y="370" class="field">All adaptation halted until restored</text>
+
+  <!-- Arrow: Decision to Outcomes -->
+  <path d="M 640 410 L 720 240" class="decision-arrow" stroke="#0066cc" />
+  <text x="670" y="320" class="label" fill="#0066cc">decision</text>
+
+  <!-- Bottom Section: Response Structure -->
+  <text x="70" y="550" class="section-title">Canonical Response (NEXUS-CC-CON-001)</text>
+
+  <!-- Response Fields Left -->
+  <rect x="50" y="565" width="320" height="310" class="box" rx="4" />
+  <text x="65" y="585" class="label" font-weight="bold">response_core</text>
+  <text x="65" y="603" class="field">decision: GRANT | THROTTLE |</text>
+  <text x="65" y="619" class="field">          REJECT | REVERSE |</text>
+  <text x="65" y="635" class="field">          SAFE_LOCK</text>
+  <text x="65" y="651" class="field">requested_authority: string</text>
+  <text x="65" y="667" class="field">verified: boolean</text>
+  <text x="65" y="683" class="field">validation_result: VALID |</text>
+  <text x="65" y="699" class="field">                   EXPIRED |</text>
+  <text x="65" y="715" class="field">                   UNVERIFIED</text>
+  <text x="65" y="731" class="field">validated_delta_a: float</text>
+  <text x="65" y="747" class="field">delta_v: float</text>
+  <text x="65" y="763" class="field">risk_score: float [0,1]</text>
+  <text x="65" y="779" class="field">verification_margin: ΔV - ΔA</text>
+  <text x="65" y="795" class="field">mutation: boolean</text>
+
+  <!-- Response Fields Center -->
+  <rect x="380" y="565" width="330" height="310" class="box" rx="4" />
+  <text x="395" y="585" class="label" font-weight="bold">evidence_lineage</text>
+  <text x="395" y="603" class="field">source: [string]</text>
+  <text x="395" y="619" class="field">  telemetry sources</text>
+  <text x="395" y="640" class="field">validation: [{</text>
+  <text x="395" y="656" class="field">  evidence_id, timestamp,</text>
+  <text x="395" y="672" class="field">  status: VALID|EXPIRED</text>
+  <text x="395" y="688" class="field">}]</text>
+  <text x="395" y="708" class="field">contribution: {</text>
+  <text x="395" y="724" class="field">  evidence_id: risk_weight</text>
+  <text x="395" y="740" class="field">}</text>
+  <text x="395" y="760" class="field">decision: {</text>
+  <text x="395" y="776" class="field">  timestamp, reasoning,</text>
+  <text x="395" y="792" class="field">  governing_principle</text>
+  <text x="395" y="808" class="field">}</text>
+
+  <!-- Response Fields Right -->
+  <rect x="720" y="565" width="280" height="310" class="box" rx="4" />
+  <text x="735" y="585" class="label" font-weight="bold">signature</text>
+  <text x="735" y="603" class="field">algorithm: RSA-SHA256 |</text>
+  <text x="735" y="619" class="field">           ECDSA-SHA256</text>
+  <text x="735" y="635" class="field">value: hex-encoded sig</text>
+  <text x="735" y="651" class="field">key_id: public_key_id</text>
+  <text x="735" y="667" class="field">timestamp: ISO 8601</text>
+
+  <text x="735" y="690" class="label" font-weight="bold">constraints</text>
+  <text x="735" y="708" class="field">• fail-closed on</text>
+  <text x="735" y="724" class="field">  evidence expiration</text>
+  <text x="735" y="740" class="field">• deterministic</text>
+  <text x="735" y="756" class="field">  output</text>
+  <text x="735" y="772" class="field">• auditability</text>
+  <text x="735" y="788" class="field">  from lineage</text>
+  <text x="735" y="804" class="field">• ΔA ≤ ΔV</text>
+  <text x="735" y="820" class="field">  enforced</text>
+
+  <!-- Status Bar -->
+  <rect x="1020" y="565" width="280" height="310" class="box" rx="4" />
+  <text x="1035" y="585" class="label" font-weight="bold">operational_state</text>
+  <text x="1035" y="603" class="field">last_verified: ISO 8601</text>
+  <text x="1035" y="619" class="field">granted_authority: string</text>
+  <text x="1035" y="635" class="field">verification_debt: float</text>
+  <text x="1035" y="651" class="field">current_margin: ΔV - ΔA</text>
+  <text x="1035" y="667" class="field">active_constraints: []</text>
+
+  <text x="1035" y="690" class="label" font-weight="bold">example (CAL-001)</text>
+  <text x="1035" y="708" class="field">decision: GRANT</text>
+  <text x="1035" y="724" class="field">delta_a: 0.31</text>
+  <text x="1035" y="740" class="field">delta_v: 0.75</text>
+  <text x="1035" y="756" class="field">margin: 0.44</text>
+  <text x="1035" y="772" class="field">risk_score: 0.13</text>
+
+  <text x="1035" y="796" class="label" font-weight="bold">example (CAL-002)</text>
+  <text x="1035" y="812" class="field">decision: REJECT</text>
+  <text x="1035" y="828" class="field">expired_evidence</text>
+</svg>

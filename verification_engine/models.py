@@ -1,16 +1,18 @@
 """
-Canonical response models for Nexus Verification Engine v0.1
-Implements NEXUS-CC-CON-001 contract
+Data models for Nexus Verification Engine v0.1
+
+Implements canonical response structures per NEXUS-CC-CON-001.
+All snake_case naming convention.
 """
 
-from enum import Enum
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
+from typing import List, Dict, Any, Optional
+from enum import Enum
 
 
 class Decision(str, Enum):
-    """Five authoritative decisions."""
+    """Five authoritative verification decisions."""
     GRANT = "GRANT"
     THROTTLE = "THROTTLE"
     REJECT = "REJECT"
@@ -27,73 +29,89 @@ class ValidationStatus(str, Enum):
 
 
 @dataclass
-class ValidationEntry:
-    """Entry in evidence validation chain."""
+class ValidationRecord:
+    """Individual evidence validation in the lineage chain."""
     evidence_id: str
-    timestamp: str
-    status: str
+    timestamp: str  # ISO 8601
+    status: ValidationStatus
 
-    def to_dict(self):
-        return asdict(self)
-
-
-@dataclass
-class DecisionContext:
-    """Decision reasoning and context."""
-    timestamp: str
-    reasoning: str
-    governing_principle: str
-
-    def to_dict(self):
-        return asdict(self)
-
-
-@dataclass
-class EvidenceLineage:
-    """Complete evidence lineage for auditability."""
-    source: List[str]
-    validation: List[Dict]
-    contribution: Dict[str, float]
-    decision: Dict
-
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
-            "source": self.source,
-            "validation": self.validation,
-            "contribution": self.contribution,
-            "decision": self.decision
+            "evidence_id": self.evidence_id,
+            "timestamp": self.timestamp,
+            "status": self.status.value
         }
 
 
 @dataclass
-class Signature:
-    """Cryptographic signature."""
-    algorithm: str
-    value: str
-    key_id: str
-    timestamp: str
+class DecisionContext:
+    """Decision reasoning and governing principle."""
+    timestamp: str  # ISO 8601
+    reasoning: str
+    governing_principle: str
 
-    def to_dict(self):
-        return asdict(self)
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp,
+            "reasoning": self.reasoning,
+            "governing_principle": self.governing_principle
+        }
+
+
+@dataclass
+class CryptographicSignature:
+    """Cryptographic signature over canonical response."""
+    algorithm: str  # e.g., "RSA-SHA256"
+    value: str     # hex-encoded signature
+    key_id: str    # public key identifier
+    timestamp: str # ISO 8601
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "algorithm": self.algorithm,
+            "value": self.value,
+            "key_id": self.key_id,
+            "timestamp": self.timestamp
+        }
+
+
+@dataclass
+class EvidenceLineage:
+    """Complete evidence chain and decision history."""
+    source: List[str]                          # evidence source identifiers
+    validation: List[ValidationRecord]         # validation chain
+    contribution: Dict[str, float]             # evidence contribution to risk
+    decision: DecisionContext                  # decision context
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "source": self.source,
+            "validation": [v.to_dict() for v in self.validation],
+            "contribution": self.contribution,
+            "decision": self.decision.to_dict()
+        }
 
 
 @dataclass
 class VerificationResponse:
-    """Canonical verification response implementing NEXUS-CC-CON-001."""
-    
+    """
+    Canonical flat response structure per NEXUS-CC-CON-001.
+    All fields required for auditability and determinism.
+    """
     decision: Decision
     requested_authority: str
     verified: bool
     validation_result: ValidationStatus
-    validated_delta_a: float
-    delta_v: float
-    risk_score: float
-    verification_margin: float
-    mutation: bool
+    validated_delta_a: float                   # ΔA: adaptation requested
+    delta_v: float                             # ΔV: verification capacity
+    risk_score: float                          # aggregated risk [0, 1]
+    verification_margin: float                 # ΔV - ΔA
+    mutation: bool                             # system mutation flag
     evidence_lineage: EvidenceLineage
-    signature: Signature
+    signature: CryptographicSignature
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to authoritative canonical representation."""
         return {
             "decision": self.decision.value,
             "requested_authority": self.requested_authority,
@@ -108,6 +126,7 @@ class VerificationResponse:
             "signature": self.signature.to_dict()
         }
 
-    def to_json(self):
+    def to_json(self) -> str:
+        """Serialize to JSON with deterministic key ordering."""
         import json
-        return json.dumps(self.to_dict(), indent=2)
+        return json.dumps(self.to_dict(), sort_keys=True, separators=(',', ':'))
