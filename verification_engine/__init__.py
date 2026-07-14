@@ -1,18 +1,10 @@
 """
 Nexus Verification Engine v0.1
-
-A deterministic verification system implementing NEXUS-CC-CON-001.
-Governed by: ΔA ≤ ΔV
+Python implementation of NEXUS-CC-CON-001 contract
 """
 
+from .engine import VerificationEngine
+from .models import Decision, ValidationStatus, VerificationResponse
+
 __version__ = "0.1.0"
-__contract__ = "NEXUS-CC-CON-001"
-
-from verification_engine.engine import VerificationEngine
-from verification_engine.models import VerificationResponse, EvidenceLineage
-
-__all__ = [
-    "VerificationEngine",
-    "VerificationResponse",
-    "EvidenceLineage",
-]
+__all__ = ["VerificationEngine", "Decision", "ValidationStatus", "VerificationResponse"]
