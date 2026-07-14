@@ -1,0 +1,164 @@
+{
+  "contract_id": "NEXUS-CC-CON-001",
+  "version": "1.0.0",
+  "status": "locked",
+  "description": "Nexus Command Center Verification Contract - Authoritative specification for verification engine decisions",
+  "governed_by": "NEX-ACF-001",
+  "decisions": [
+    "GRANT",
+    "THROTTLE",
+    "REJECT",
+    "REVERSE",
+    "SAFE_LOCK"
+  ],
+  "response_structure": {
+    "type": "object",
+    "properties": {
+      "decision": {
+        "type": "string",
+        "enum": ["GRANT", "THROTTLE", "REJECT", "REVERSE", "SAFE_LOCK"],
+        "description": "Primary verification decision"
+      },
+      "requested_authority": {
+        "type": "string",
+        "description": "Authority level requested by the verification target"
+      },
+      "verified": {
+        "type": "boolean",
+        "description": "Whether target state has been verified"
+      },
+      "validation_result": {
+        "type": "string",
+        "enum": ["VALID", "INVALID", "EXPIRED", "UNVERIFIED"],
+        "description": "Validation status of evidence"
+      },
+      "validated_delta_a": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Validated adaptation delta requested (ΔA)"
+      },
+      "delta_v": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Available verification capacity (ΔV)"
+      },
+      "risk_score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Aggregated risk assessment"
+      },
+      "verification_margin": {
+        "type": "number",
+        "description": "ΔV - ΔA: margin between capacity and request. Negative indicates unsafe state."
+      },
+      "mutation": {
+        "type": "boolean",
+        "description": "Whether the target request represents a system mutation"
+      },
+      "evidence_lineage": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Evidence source identifiers"
+          },
+          "validation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "evidence_id": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["VALID", "EXPIRED", "UNVERIFIED"]
+                }
+              },
+              "required": ["evidence_id", "timestamp", "status"]
+            },
+            "description": "Validation chain for all evidence"
+          },
+          "contribution": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Evidence contribution to final risk calculation"
+          },
+          "decision": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reasoning": {
+                "type": "string"
+              },
+              "governing_principle": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "reasoning"],
+            "description": "Decision context and justification"
+          }
+        },
+        "required": ["source", "validation", "contribution", "decision"]
+      },
+      "signature": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "description": "Cryptographic signature algorithm (e.g., RSA-SHA256, ECDSA-SHA256)"
+          },
+          "value": {
+            "type": "string",
+            "description": "Hex-encoded signature over canonical response"
+          },
+          "key_id": {
+            "type": "string",
+            "description": "Public key identifier used for verification"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Signature timestamp"
+          }
+        },
+        "required": ["algorithm", "value", "key_id", "timestamp"]
+      }
+    },
+    "required": [
+      "decision",
+      "requested_authority",
+      "verified",
+      "validation_result",
+      "validated_delta_a",
+      "delta_v",
+      "risk_score",
+      "verification_margin",
+      "mutation",
+      "evidence_lineage",
+      "signature"
+    ]
+  },
+  "foundational_law": "ΔA ≤ ΔV",
+  "constraints": {
+    "fail_closed": "When evidence expires, exclude from calculation and recalculate. If target state cannot be verified, return REJECT or SAFE_LOCK.",
+    "determinism": "Same input SHALL always produce same decision and evidence_lineage.",
+    "auditability": "All decisions SHALL be reproducible from evidence_lineage.",
+    "safety_invariant": "System SHALL never permit ΔA > ΔV in operational state."
+  }
+}
