@@ -1,0 +1,71 @@
+{
+  "fixture_id": "NEXUS-VE-TEST-CAL-002",
+  "description": "Verification REJECT due to expired critical calendar telemetry",
+  "request": {
+    "target_id": "system_002",
+    "requested_authority": "ANALYZE",
+    "requested_delta_a": 0.31,
+    "evidence_items": [
+      {
+        "evidence_id": "EVD-003",
+        "source": "critical_calendar_telemetry",
+        "timestamp": "2026-07-13T08:00:00Z",
+        "expires_at": "2026-07-13T20:00:00Z",
+        "data": {
+          "verification_status": "expired",
+          "confidence": 0
+        }
+      },
+      {
+        "evidence_id": "EVD-004",
+        "source": "audit_log",
+        "timestamp": "2026-07-14T09:45:00Z",
+        "data": {
+          "verification_status": "valid",
+          "confidence": 0.85
+        }
+      }
+    ]
+  },
+  "expected_response": {
+    "decision": "REJECT",
+    "requested_authority": "ANALYZE",
+    "verified": false,
+    "validation_result": "EXPIRED",
+    "validated_delta_a": 0.31,
+    "delta_v": 0.0,
+    "risk_score": 0.87,
+    "verification_margin": -0.31,
+    "mutation": false,
+    "evidence_lineage": {
+      "source": ["critical_calendar_telemetry", "audit_log"],
+      "validation": [
+        {
+          "evidence_id": "EVD-003",
+          "timestamp": "2026-07-13T08:00:00Z",
+          "status": "EXPIRED"
+        },
+        {
+          "evidence_id": "EVD-004",
+          "timestamp": "2026-07-14T09:45:00Z",
+          "status": "VALID"
+        }
+      ],
+      "contribution": {
+        "EVD-003": 0.0,
+        "EVD-004": 0.13
+      },
+      "decision": {
+        "timestamp": "2026-07-14T10:00:02Z",
+        "reasoning": "Critical evidence (EVD-003) expired. Target state cannot be verified with remaining evidence. ΔA (0.31) > ΔV (0.0) after expiration. Request-level REJECT: insufficient verification capacity.",
+        "governing_principle": "ΔA ≤ ΔV failed; fail-closed due to expired critical evidence"
+      }
+    },
+    "signature": {
+      "algorithm": "RSA-SHA256",
+      "value": "placeholder_signature_002",
+      "key_id": "KEY-NEXUS-VE-001",
+      "timestamp": "2026-07-14T10:00:02Z"
+    }
+  }
+}
