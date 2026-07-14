@@ -1,0 +1,70 @@
+{
+  "fixture_id": "NEXUS-VE-TEST-CAL-001",
+  "description": "Successful verification with GRANT decision",
+  "request": {
+    "target_id": "system_001",
+    "requested_authority": "ANALYZE",
+    "requested_delta_a": 0.31,
+    "evidence_items": [
+      {
+        "evidence_id": "EVD-001",
+        "source": "runtime_telemetry",
+        "timestamp": "2026-07-14T10:00:00Z",
+        "data": {
+          "verification_status": "valid",
+          "confidence": 0.95
+        }
+      },
+      {
+        "evidence_id": "EVD-002",
+        "source": "audit_log",
+        "timestamp": "2026-07-14T09:55:00Z",
+        "data": {
+          "verification_status": "valid",
+          "confidence": 0.92
+        }
+      }
+    ]
+  },
+  "expected_response": {
+    "decision": "GRANT",
+    "requested_authority": "ANALYZE",
+    "verified": true,
+    "validation_result": "VALID",
+    "validated_delta_a": 0.31,
+    "delta_v": 0.75,
+    "risk_score": 0.13,
+    "verification_margin": 0.44,
+    "mutation": false,
+    "evidence_lineage": {
+      "source": ["runtime_telemetry", "audit_log"],
+      "validation": [
+        {
+          "evidence_id": "EVD-001",
+          "timestamp": "2026-07-14T10:00:00Z",
+          "status": "VALID"
+        },
+        {
+          "evidence_id": "EVD-002",
+          "timestamp": "2026-07-14T09:55:00Z",
+          "status": "VALID"
+        }
+      ],
+      "contribution": {
+        "EVD-001": 0.075,
+        "EVD-002": 0.055
+      },
+      "decision": {
+        "timestamp": "2026-07-14T10:00:01Z",
+        "reasoning": "All evidence valid. ΔA (0.31) ≤ ΔV (0.75). Risk score (0.13) within acceptable threshold. GRANT authority for ANALYZE.",
+        "governing_principle": "ΔA ≤ ΔV satisfied"
+      }
+    },
+    "signature": {
+      "algorithm": "RSA-SHA256",
+      "value": "placeholder_signature_001",
+      "key_id": "KEY-NEXUS-VE-001",
+      "timestamp": "2026-07-14T10:00:01Z"
+    }
+  }
+}
