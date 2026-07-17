@@ -52,3 +52,81 @@ Every pull request description must include:
 - **Maintain verification economics.** Do not break the economic model governing verification incentives.
 - **Maintain Safe Lock behavior.** Preserve the safe-lock mechanism that prevents constraint violations from propagating.
 - **Treat Nexus-Core as a research framework.** Design decisions should prioritize correctness and verifiability over performance or feature breadth.
+
+---
+
+## Constitutional Source-of-Truth Control
+
+### Frozen Baseline
+
+The project owner, Jimmy W. Moore, has designated:
+
+`NEXUS-CONST-v0.2-FROZEN-2026-07-16`
+
+as the frozen Nexus Core constitutional baseline.
+
+The complete authoritative article-by-article text has not yet been
+verified as present inside this repository.
+
+Until that source-of-truth document is recovered and approved:
+
+1. Do not create, reconstruct, summarize, replace, or silently edit
+   Constitution v0.2.
+2. Do not infer constitutional wording from README files, contracts,
+   diagrams, tests, source code, issues, pull requests, or implementation.
+3. Do not assign constitutional article numbers to proposed concepts.
+4. Do not claim that a proposal, specification, diagram, or implementation
+   has constitutional authority.
+5. State missing evidence and uncertainty directly. Do not guess.
+6. Preserve all previous versions and complete change history.
+7. Do not merge any pull request without explicit approval from
+   Jimmy W. Moore.
+
+### Required Development Order
+
+Constitution
+→ Formal Specification
+→ Executable Controls
+→ Verification Evidence
+
+Implementation follows the Constitution.
+The Constitution does not drift with implementation.
+
+### Proposed Conscience and Library Architecture
+
+The following concepts are proposed architecture and are not yet
+authorized for executable implementation:
+
+- The Book — Living Conscience
+- The Book Sentinel
+- The Great Library — Collective Memory
+- secure inter-Book experience exchange
+- distributed knowledge admission
+- Library checkpoint or consensus mechanisms
+- automated inherited knowledge
+- Library-to-actuator pathways
+
+No code, schema, service, cryptographic protocol, consensus mechanism,
+or automated knowledge-exchange system for these concepts may be
+created until controlled constitutional and specification documents
+are approved.
+
+### Knowledge Independence Rules
+
+- Knowledge shared is not knowledge automatically believed.
+- Shared experience is not shared identity.
+- Consensus is not truth.
+- A signature proves integrity and key control; it does not prove that
+  narrative content is true.
+- Imported knowledge is not locally verified knowledge.
+- No external Book may write directly into another Book.
+- No Library contribution may directly command an actuator.
+- Imported adaptation remains governed by:
+
+  ΔA_import ≤ ΔV_receiver
+
+### Non-Revision Rule
+
+Corrections must append to history rather than silently replacing it.
+
+Missing constitutional text shall never be replaced by assumption.
