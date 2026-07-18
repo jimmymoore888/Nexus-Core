@@ -1,4 +1,9 @@
 # Nexus-Core
+
+> **Nexus Core is the constitutional conduit for verified intelligence across the technology hierarchy.**
+
+**Constitutional** means every governed component remains subordinate to the Nexus Core Constitution. **Conduit** means Nexus Core connects authorization, evidence, verification, knowledge, memory, responsibility, and adaptation across the technology hierarchy. **Verified intelligence** means intelligence accepted only within explicitly defined verification criteria and evidence boundaries. **Technology hierarchy** includes physical infrastructure, sensors, networks, platforms, data, models, agents, applications, institutions, and human oversight.
+
 Nexus Adaptive Continuity Framework (NEX-ACF-001) — A control framework for preserving continuity through verified adaptation. Simulation and validation repository.
 
 ## Nexus Verification Engine v0.1
