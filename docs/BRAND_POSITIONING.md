@@ -33,4 +33,4 @@ Use the canonical sentence exactly:
 
 "Nexus Core is the constitutional conduit for verified intelligence across the technology hierarchy."
 
-Do not shorten it to "Verified Intelligence," present "Tix" as a shorthand, or claim that Nexus Core is certified across every technology or industry.
+Do not shorten it to "Verified Intelligence" or claim that Nexus Core is certified across every technology or industry.
