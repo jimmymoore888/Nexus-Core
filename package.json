@@ -1,7 +1,7 @@
 {
   "name": "nexus-core",
   "version": "1.0.0",
-  "description": "Nexus Adaptive Continuity Framework - Verification Engine v0.1",
+  "description": "Nexus Core — the constitutional conduit for verified intelligence across the technology hierarchy. Verification Engine v0.1.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
