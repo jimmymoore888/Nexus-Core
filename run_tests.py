@@ -19,8 +19,8 @@ def run_tests():
     
     # Discover and run tests
     loader = unittest.TestLoader()
-    start_dir = str(Path(__file__).parent)
-    suite = loader.discover(start_dir, pattern='test_*.py')
+    start_dir = Path(__file__).resolve().parent / "tests"
+    suite = loader.discover(str(start_dir), pattern='test_*.py')
     
     # Fail immediately if no tests were discovered
     if suite.countTestCases() == 0:
