@@ -6,7 +6,7 @@ Nexus Adaptive Continuity Framework (NEX-ACF-001) — A control framework for pr
 
 **Constitutional** means every governed component remains subordinate to the Nexus Core Constitution. **Conduit** means Nexus Core connects authorization, evidence, verification, knowledge, memory, responsibility, and governed adaptation across the technology hierarchy. **Verified intelligence** means intelligence accepted only within explicitly defined verification criteria and evidence boundaries. **Technology hierarchy** includes physical infrastructure, sensors, networks, platforms, data, models, agents, applications, institutions, and human oversight.
 
-## Nexus Verification Engine v0.1
+## Nexus Verification Engine v0.1.1
 
 ### Quick Start
 
@@ -144,7 +144,7 @@ gcloud run deploy nexus-ve-v0.1 \
 
 ### Architecture
 
-The Nexus Verification Engine v0.1 implements the contract specified in `contracts/NEXUS-CC-CON-001.json`.
+The Nexus Verification Engine v0.1.1 implements the contract specified in `contracts/NEXUS-CC-CON-001.json`.
 
 **Core Components:**
 

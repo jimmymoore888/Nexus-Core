@@ -1,8 +1,14 @@
 """
-Nexus Verification Engine v0.1
+Nexus Verification Engine v0.1.1
 
 Core deterministic verification logic implementing NEXUS-CC-CON-001.
 Fundamental Law: ΔA ≤ ΔV
+
+Zero Drift Corrections (v0.1.1):
+- Critical evidence (data.verification_status == "expired") collapses ΔV to 0
+  regardless of other valid evidence present.
+- validated_delta_a is capped at delta_v (min(requested_delta_a, delta_v))
+  so that the response never reports ΔA > ΔV.
 """
 
 from datetime import datetime
@@ -27,6 +33,7 @@ class VerificationEngine:
     - Fail-closed: when evidence expires, exclude and recalculate
     - Auditable: all decisions reproducible from evidence_lineage
     - Conformant: never permits ΔA > ΔV in operational state
+    - Zero Drift: validated_delta_a is always ≤ delta_v in the response
     """
 
     def __init__(self, key_id: str = "KEY-NEXUS-VE-001"):
@@ -64,6 +71,7 @@ class VerificationEngine:
         validation_chain = []
         contribution_map = {}
         total_valid_risk_contribution = 0.0
+        has_critical_expired = False
 
         current_dt = datetime.fromisoformat(current_timestamp.replace('Z', '+00:00'))
 
@@ -72,12 +80,27 @@ class VerificationEngine:
             source = evidence["source"]
             timestamp = evidence["timestamp"]
             confidence = evidence.get("data", {}).get("confidence", 0.0)
+            data_status = evidence.get("data", {}).get("verification_status", "")
 
             # Track all sources
             if source not in evidence_sources:
                 evidence_sources.append(source)
 
-            # Check expiration
+            # Check for explicit critical expiration in evidence data
+            if data_status == "expired":
+                # Evidence is explicitly declaring itself expired — critical failure
+                has_critical_expired = True
+                validation_chain.append(
+                    ValidationRecord(
+                        evidence_id=evidence_id,
+                        timestamp=timestamp,
+                        status=ValidationStatus.EXPIRED
+                    )
+                )
+                contribution_map[evidence_id] = 0.0
+                continue
+
+            # Check time-based expiration
             if "expires_at" in evidence:
                 expires_at = datetime.fromisoformat(
                     evidence["expires_at"].replace('Z', '+00:00')
@@ -109,13 +132,15 @@ class VerificationEngine:
             contribution_map[evidence_id] = contribution
             total_valid_risk_contribution += contribution
 
-        # Calculate verification capacity and risk score
-        if valid_evidence:
-            # With valid evidence: ΔV is high, risk is low
+        # Calculate verification capacity and risk score.
+        # Critical expired evidence (data.verification_status == "expired") collapses
+        # ΔV to 0 regardless of any other valid evidence present (Zero Drift correction).
+        if valid_evidence and not has_critical_expired:
+            # With valid evidence and no critical expiration: ΔV is high, risk is low
             delta_v = 0.75
             risk_score = min(0.13, total_valid_risk_contribution)
         else:
-            # No valid evidence: ΔV collapses to 0, risk is high
+            # No valid evidence or critical expiration detected: ΔV collapses to 0
             delta_v = 0.0
             risk_score = max(0.87, total_valid_risk_contribution)
 
@@ -169,12 +194,14 @@ class VerificationEngine:
         )
 
         # Return canonical response
+        # Zero Drift correction: validated_delta_a is capped at delta_v so that
+        # the response never reports ΔA > ΔV (ΔA ≤ ΔV invariant in output).
         return VerificationResponse(
             decision=decision,
             requested_authority=requested_authority,
             verified=target_verified,
             validation_result=validation_result,
-            validated_delta_a=requested_delta_a,
+            validated_delta_a=min(requested_delta_a, delta_v),
             delta_v=delta_v,
             risk_score=risk_score,
             verification_margin=verification_margin,

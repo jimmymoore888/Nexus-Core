@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test runner for Nexus Verification Engine v0.1
+Test runner for Nexus Verification Engine v0.1.1
 Executes full test suite before PR submission
 """
 
@@ -13,7 +13,7 @@ def run_tests():
     """Execute comprehensive test suite."""
     
     print("=" * 80)
-    print("NEXUS VERIFICATION ENGINE v0.1 - TEST SUITE")
+    print("NEXUS VERIFICATION ENGINE v0.1.1 - TEST SUITE")
     print("=" * 80)
     print()
     
