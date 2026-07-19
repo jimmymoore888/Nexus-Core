@@ -10,27 +10,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _run_node_verify(request_payload, current_timestamp):
-    node_script = r"""
-const fs = require('fs');
-const { verifyRequest } = require('./verification_engine/engine');
-const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-try {
-  const response = verifyRequest(
-    input.target_id,
-    input.requested_authority,
-    input.requested_delta_a,
-    input.evidence_items,
-    input.current_timestamp
-  );
-  process.stdout.write(JSON.stringify({ ok: true, response }));
-} catch (err) {
-  process.stdout.write(JSON.stringify({ ok: false, error: err.message }));
-}
-"""
     payload = dict(request_payload)
     payload["current_timestamp"] = current_timestamp
     proc = subprocess.run(
-        ["node", "-e", node_script],
+        ["node", "tests/node_verify_wrapper.js"],
         input=json.dumps(payload),
         text=True,
         capture_output=True,

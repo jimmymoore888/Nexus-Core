@@ -291,6 +291,11 @@ test('canonicalStringify sorts nested keys deterministically', () => {
   assert.strictEqual(canonicalStringify(payload), expected);
 });
 
+test('canonicalStringify handles empty and null values', () => {
+  assert.strictEqual(canonicalStringify({}), '{}');
+  assert.strictEqual(canonicalStringify({ k: null, a: [] }), '{"a":[],"k":null}');
+});
+
 test('generateSignature deterministic with special characters', () => {
   const targetId = 'system/α?=value&x=1';
   const ts = '2026-07-14T10:00:00Z';
