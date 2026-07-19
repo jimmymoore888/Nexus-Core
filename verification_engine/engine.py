@@ -5,14 +5,17 @@ Core deterministic verification logic implementing NEXUS-CC-CON-001.
 Fundamental Law: ΔA ≤ ΔV
 
 Zero Drift Corrections (v0.1.1):
-- Critical evidence (data.verification_status == "expired") collapses ΔV to 0
-  regardless of other valid evidence present.
-- validated_delta_a is capped at delta_v (min(requested_delta_a, delta_v))
-  so that the response never reports ΔA > ΔV.
+- Critical evidence collapse: expired-by-status, expired-by-time, invalid, unverified,
+  or future-dated evidence is fail-closed — collapses ΔV to 0.0 and forces REJECT.
+- validated_delta_a = requested_delta_a for GRANT only; 0.0 for REJECT and SAFE_LOCK.
+- Duplicate evidence IDs are rejected (ValueError).
+- risk_score is bounded to [0.0, 1.0].
+- Evaluation timestamp is determined from the explicit current_timestamp argument.
+- Signature label corrected to HMAC-SHA256 to reflect placeholder construction.
 """
 
-from datetime import datetime
-from typing import Dict, List, Any, Optional
+from datetime import datetime, timezone
+from typing import Dict, List, Any
 from verification_engine.models import (
     VerificationResponse,
     EvidenceLineage,
@@ -23,17 +26,20 @@ from verification_engine.models import (
     ValidationStatus,
 )
 
+# Evidence data statuses that constitute a critical failure and collapse ΔV to 0.
+_CRITICAL_FAILED_STATUSES = frozenset({"expired", "invalid", "unverified"})
+
 
 class VerificationEngine:
     """
     Deterministic verification engine governed by ΔA ≤ ΔV.
-    
+
     Properties:
     - Deterministic: same input always produces same output
-    - Fail-closed: when evidence expires, exclude and recalculate
+    - Fail-closed: critical evidence failure collapses ΔV to 0, forces REJECT
     - Auditable: all decisions reproducible from evidence_lineage
     - Conformant: never permits ΔA > ΔV in operational state
-    - Zero Drift: validated_delta_a is always ≤ delta_v in the response
+    - Zero Drift: validated_delta_a equals requested_delta_a only on GRANT; 0.0 otherwise
     """
 
     def __init__(self, key_id: str = "KEY-NEXUS-VE-001"):
@@ -50,142 +56,192 @@ class VerificationEngine:
     ) -> VerificationResponse:
         """
         Execute deterministic verification against evidence lineage.
-        
+
         Args:
             target_id: System identifier being verified
             requested_authority: Authority level requested
             requested_delta_a: Adaptation delta requested (ΔA)
             evidence_items: List of evidence objects with validation metadata
-            current_timestamp: Current time for expiration checks (ISO 8601)
-        
+            current_timestamp: Evaluation timestamp for expiration checks (ISO 8601)
+
         Returns:
             VerificationResponse with canonical structure
-        
-        Raises:
-            ValueError: If evidence is malformed or required fields missing
-        """
-        
-        # Collect valid evidence after expiration filtering
-        valid_evidence = []
-        evidence_sources = []
-        validation_chain = []
-        contribution_map = {}
-        total_valid_risk_contribution = 0.0
-        has_critical_expired = False
 
-        current_dt = datetime.fromisoformat(current_timestamp.replace('Z', '+00:00'))
+        Raises:
+            ValueError: If evidence is malformed, required fields are missing,
+                        or duplicate evidence IDs are present
+        """
+        # Evaluation timestamp — derived from the explicit caller-supplied value
+        current_dt = datetime.fromisoformat(current_timestamp.replace("Z", "+00:00"))
+
+        valid_evidence = []
+        evidence_sources: List[str] = []
+        validation_chain: List[ValidationRecord] = []
+        contribution_map: Dict[str, float] = {}
+        total_valid_risk_contribution = 0.0
+        has_critical_failure = False
+
+        # Duplicate-ID detection
+        seen_ids: set = set()
 
         for evidence in evidence_items:
             evidence_id = evidence["evidence_id"]
             source = evidence["source"]
             timestamp = evidence["timestamp"]
-            confidence = evidence.get("data", {}).get("confidence", 0.0)
-            data_status = evidence.get("data", {}).get("verification_status", "")
+            confidence = float(evidence.get("data", {}).get("confidence", 0.0))
+            data_status = str(evidence.get("data", {}).get("verification_status", "")).lower()
 
-            # Track all sources
+            # Reject duplicate evidence IDs immediately
+            if evidence_id in seen_ids:
+                raise ValueError(
+                    f"Duplicate evidence_id detected: '{evidence_id}'. "
+                    "Each evidence item must carry a unique ID."
+                )
+            seen_ids.add(evidence_id)
+
+            # Track all source identifiers
             if source not in evidence_sources:
                 evidence_sources.append(source)
 
-            # Check for explicit critical expiration in evidence data
-            if data_status == "expired":
-                # Evidence is explicitly declaring itself expired — critical failure
-                has_critical_expired = True
+            # --- Critical failure detection (fail-closed) ---
+
+            # 1. Explicit failure status in evidence data
+            if data_status in _CRITICAL_FAILED_STATUSES:
+                has_critical_failure = True
                 validation_chain.append(
                     ValidationRecord(
                         evidence_id=evidence_id,
                         timestamp=timestamp,
                         status=ValidationStatus.EXPIRED
+                        if data_status == "expired"
+                        else ValidationStatus.INVALID,
                     )
                 )
                 contribution_map[evidence_id] = 0.0
                 continue
 
-            # Check time-based expiration
+            # 2. Time-based expiration (expires_at ≤ current_timestamp)
             if "expires_at" in evidence:
                 expires_at = datetime.fromisoformat(
-                    evidence["expires_at"].replace('Z', '+00:00')
+                    evidence["expires_at"].replace("Z", "+00:00")
                 )
                 if current_dt >= expires_at:
-                    # Evidence expired: exclude and mark EXPIRED
+                    has_critical_failure = True
                     validation_chain.append(
                         ValidationRecord(
                             evidence_id=evidence_id,
                             timestamp=timestamp,
-                            status=ValidationStatus.EXPIRED
+                            status=ValidationStatus.EXPIRED,
                         )
                     )
                     contribution_map[evidence_id] = 0.0
                     continue
 
-            # Evidence is valid
+            # 3. Future-dated evidence (timestamp > current_timestamp)
+            try:
+                evidence_dt = datetime.fromisoformat(
+                    timestamp.replace("Z", "+00:00")
+                )
+                if evidence_dt > current_dt:
+                    has_critical_failure = True
+                    validation_chain.append(
+                        ValidationRecord(
+                            evidence_id=evidence_id,
+                            timestamp=timestamp,
+                            status=ValidationStatus.INVALID,
+                        )
+                    )
+                    contribution_map[evidence_id] = 0.0
+                    continue
+            except ValueError:
+                # Unparseable timestamp — treat as invalid
+                has_critical_failure = True
+                validation_chain.append(
+                    ValidationRecord(
+                        evidence_id=evidence_id,
+                        timestamp=timestamp,
+                        status=ValidationStatus.INVALID,
+                    )
+                )
+                contribution_map[evidence_id] = 0.0
+                continue
+
+            # --- Evidence is valid ---
             valid_evidence.append(evidence)
             validation_chain.append(
                 ValidationRecord(
                     evidence_id=evidence_id,
                     timestamp=timestamp,
-                    status=ValidationStatus.VALID
+                    status=ValidationStatus.VALID,
                 )
             )
 
-            # Calculate evidence contribution to risk
             contribution = confidence * 0.1  # simple contribution model
             contribution_map[evidence_id] = contribution
             total_valid_risk_contribution += contribution
 
-        # Calculate verification capacity and risk score.
-        # Critical expired evidence (data.verification_status == "expired") collapses
-        # ΔV to 0 regardless of any other valid evidence present (Zero Drift correction).
-        if valid_evidence and not has_critical_expired:
-            # With valid evidence and no critical expiration: ΔV is high, risk is low
+        # --- Verification capacity and risk score ---
+        # Any critical failure collapses ΔV to 0 regardless of co-present valid evidence.
+        if valid_evidence and not has_critical_failure:
             delta_v = 0.75
-            risk_score = min(0.13, total_valid_risk_contribution)
+            raw_risk = min(0.13, total_valid_risk_contribution)
         else:
-            # No valid evidence or critical expiration detected: ΔV collapses to 0
             delta_v = 0.0
-            risk_score = max(0.87, total_valid_risk_contribution)
+            raw_risk = max(0.87, total_valid_risk_contribution)
 
-        # Calculate verification margin
+        # Bound risk_score to [0.0, 1.0]
+        risk_score = max(0.0, min(1.0, raw_risk))
+
+        # Verification margin
         verification_margin = delta_v - requested_delta_a
 
-        # Determine decision based on fundamental law and evidence state
+        # Determine decision
+        has_failed_evidence = any(
+            v.status in (ValidationStatus.EXPIRED, ValidationStatus.INVALID)
+            for v in validation_chain
+        )
         decision, target_verified = self._make_decision(
             requested_delta_a=requested_delta_a,
             delta_v=delta_v,
             verification_margin=verification_margin,
-            has_valid_evidence=len(valid_evidence) > 0,
-            has_expired_evidence=any(
-                v.status == ValidationStatus.EXPIRED for v in validation_chain
-            ),
+            has_valid_evidence=bool(valid_evidence),
+            has_failed_evidence=has_failed_evidence,
         )
 
-        # Determine validation result
-        if has_expired_evidence := any(
-            v.status == ValidationStatus.EXPIRED for v in validation_chain
-        ):
-            validation_result = ValidationStatus.EXPIRED
-        elif len(valid_evidence) > 0:
+        # Validation result
+        if has_failed_evidence:
+            # Prefer EXPIRED over INVALID for backward compat with fixtures
+            validation_result = (
+                ValidationStatus.EXPIRED
+                if any(v.status == ValidationStatus.EXPIRED for v in validation_chain)
+                else ValidationStatus.INVALID
+            )
+        elif valid_evidence:
             validation_result = ValidationStatus.VALID
         else:
             validation_result = ValidationStatus.UNVERIFIED
 
-        # Build decision context
+        # validated_delta_a: requested value for GRANT only; 0.0 for REJECT/SAFE_LOCK
+        validated_delta_a = requested_delta_a if decision == Decision.GRANT else 0.0
+
+        # Build decision context using explicit evaluation timestamp
         decision_context = self._build_decision_context(
             decision=decision,
             delta_a=requested_delta_a,
             delta_v=delta_v,
             verification_margin=verification_margin,
-            has_expired=has_expired_evidence,
+            has_failed=has_failed_evidence,
+            evaluation_timestamp=current_timestamp,
         )
 
-        # Create signature
+        # Cryptographic signature (HMAC-SHA256 placeholder)
         signature = CryptographicSignature(
-            algorithm="RSA-SHA256",
-            value=f"placeholder_signature_{hash(target_id + str(current_timestamp)) % 1000}",
+            algorithm="HMAC-SHA256",
+            value=f"placeholder_signature_{hash(target_id + str(current_timestamp)) % 1000:03d}",
             key_id=self.key_id,
             timestamp=current_timestamp,
         )
 
-        # Build evidence lineage
         evidence_lineage = EvidenceLineage(
             source=evidence_sources,
             validation=validation_chain,
@@ -193,15 +249,12 @@ class VerificationEngine:
             decision=decision_context,
         )
 
-        # Return canonical response
-        # Zero Drift correction: validated_delta_a is capped at delta_v so that
-        # the response never reports ΔA > ΔV (ΔA ≤ ΔV invariant in output).
         return VerificationResponse(
             decision=decision,
             requested_authority=requested_authority,
             verified=target_verified,
             validation_result=validation_result,
-            validated_delta_a=min(requested_delta_a, delta_v),
+            validated_delta_a=validated_delta_a,
             delta_v=delta_v,
             risk_score=risk_score,
             verification_margin=verification_margin,
@@ -216,29 +269,28 @@ class VerificationEngine:
         delta_v: float,
         verification_margin: float,
         has_valid_evidence: bool,
-        has_expired_evidence: bool,
-    ) -> tuple[Decision, bool]:
+        has_failed_evidence: bool,
+    ) -> tuple:
         """
-        Deterministic decision logic.
-        
+        Deterministic decision logic enforcing ΔA ≤ ΔV.
+
         Returns:
             (Decision, verified: bool)
         """
-        # Fundamental law: ΔA ≤ ΔV
         if verification_margin < 0:
-            # Insufficient capacity
-            if has_expired_evidence:
-                # Critical evidence expired: fail-closed REJECT at request level
+            # ΔA > ΔV — insufficient capacity
+            if has_failed_evidence:
+                # Fail-closed REJECT at request level
                 return (Decision.REJECT, False)
             else:
-                # Systemic issue: SAFE_LOCK
+                # Systemic capacity failure — SAFE_LOCK
                 return (Decision.SAFE_LOCK, False)
 
         # ΔA ≤ ΔV satisfied
-        if has_valid_evidence:
+        if has_valid_evidence and not has_failed_evidence:
             return (Decision.GRANT, True)
-        elif has_expired_evidence:
-            # Margin OK but critical evidence expired
+        elif has_failed_evidence:
+            # Margin appears OK but critical evidence failed — REJECT
             return (Decision.REJECT, False)
         else:
             # No evidence at all
@@ -250,11 +302,10 @@ class VerificationEngine:
         delta_a: float,
         delta_v: float,
         verification_margin: float,
-        has_expired: bool,
+        has_failed: bool,
+        evaluation_timestamp: str,
     ) -> DecisionContext:
-        """Build human-readable decision reasoning."""
-        timestamp = datetime.utcnow().isoformat() + "Z"
-
+        """Build human-readable decision reasoning using explicit evaluation timestamp."""
         if decision == Decision.GRANT:
             reasoning = (
                 f"All evidence valid. ΔA ({delta_a}) ≤ ΔV ({delta_v}). "
@@ -262,13 +313,13 @@ class VerificationEngine:
             )
             principle = "ΔA ≤ ΔV satisfied"
         elif decision == Decision.REJECT:
-            if has_expired:
+            if has_failed:
                 reasoning = (
-                    f"Critical evidence expired. Target state unverified with remaining evidence. "
-                    f"ΔA ({delta_a}) > ΔV ({delta_v}) after expiration. "
+                    f"Critical evidence failed. Target state unverified with remaining evidence. "
+                    f"ΔA ({delta_a}) > ΔV ({delta_v}) after failure. "
                     f"Request-level REJECT: insufficient verification capacity."
                 )
-                principle = "ΔA ≤ ΔV failed; fail-closed due to expired critical evidence"
+                principle = "ΔA ≤ ΔV failed; fail-closed due to critical evidence failure"
             else:
                 reasoning = (
                     f"Insufficient verification capacity. ΔA ({delta_a}) > ΔV ({delta_v}). "
@@ -286,7 +337,7 @@ class VerificationEngine:
             principle = "Verification governance active"
 
         return DecisionContext(
-            timestamp=timestamp,
+            timestamp=evaluation_timestamp,
             reasoning=reasoning,
             governing_principle=principle,
         )

@@ -239,7 +239,7 @@ class TestFixtureRegression(unittest.TestCase):
 
     def test_distinction_request_reject_vs_safe_lock(self):
         """Distinguish request-level REJECT from systemic SAFE_LOCK."""
-        # Request-level REJECT: expired evidence
+        # Request-level REJECT: expired evidence collapses ΔV, fails at request level
         response_reject = self.engine.verify(
             target_id="distinguish_test_reject",
             requested_authority="ANALYZE",
@@ -256,11 +256,11 @@ class TestFixtureRegression(unittest.TestCase):
             current_timestamp="2026-07-13T20:00:01Z"
         )
 
-        # Systemic SAFE_LOCK: insufficient capacity, no expiration issue
+        # Systemic SAFE_LOCK: ΔA > ΔV but delta_v > 0 (capacity overrun, no failed evidence)
         response_lock = self.engine.verify(
             target_id="distinguish_test_lock",
             requested_authority="ANALYZE",
-            requested_delta_a=0.9,  # Request exceeds any possible ΔV
+            requested_delta_a=0.9,  # Request exceeds delta_v=0.75
             evidence_items=[
                 {
                     "evidence_id": "EVD-VALID",
@@ -276,7 +276,43 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertLess(response_reject.verification_margin, 0)
         self.assertLess(response_lock.verification_margin, 0)
         self.assertEqual(response_reject.decision, Decision.REJECT)
+        self.assertEqual(response_reject.validated_delta_a, 0.0)
         self.assertEqual(response_lock.decision, Decision.SAFE_LOCK)
+        self.assertEqual(response_lock.validated_delta_a, 0.0)
+        # SAFE_LOCK preserves delta_v > 0 (capacity was present, just insufficient)
+        self.assertGreater(response_lock.delta_v, 0.0)
+        self.assertEqual(response_lock.delta_v, 0.75)
+
+    def test_safe_lock_regression_delta_v_positive(self):
+        """Regression: SAFE_LOCK occurs when delta_v > 0 but ΔA > ΔV."""
+        response = self.engine.verify(
+            target_id="safe_lock_regression",
+            requested_authority="ACTUATE",
+            requested_delta_a=0.8,   # ΔA=0.8 > ΔV=0.75
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-SL-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T10:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.95}
+                },
+                {
+                    "evidence_id": "EVD-SL-002",
+                    "source": "audit_log",
+                    "timestamp": "2026-07-14T09:55:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.92}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:01Z"
+        )
+
+        self.assertEqual(response.decision, Decision.SAFE_LOCK)
+        self.assertFalse(response.verified)
+        # delta_v must remain positive — capacity existed but was insufficient
+        self.assertEqual(response.delta_v, 0.75)
+        self.assertLess(response.verification_margin, 0)
+        # validated_delta_a must be 0.0 for SAFE_LOCK
+        self.assertEqual(response.validated_delta_a, 0.0)
 
     def test_evidence_lineage_auditable(self):
         """Verify evidence_lineage supports auditability."""
@@ -313,6 +349,8 @@ class TestFixtureRegression(unittest.TestCase):
         # Decision context present
         self.assertIsNotNone(lineage.decision.reasoning)
         self.assertIsNotNone(lineage.decision.governing_principle)
+        # Decision context timestamp equals evaluation timestamp
+        self.assertEqual(lineage.decision.timestamp, "2026-07-14T10:00:00Z")
 
     def test_multiple_evidence_sources(self):
         """Test aggregation of evidence from multiple sources."""
@@ -348,8 +386,11 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertEqual(len(response.evidence_lineage.source), 3)
         self.assertEqual(len(response.evidence_lineage.validation), 3)
 
-    def test_mixed_valid_and_expired_evidence(self):
-        """Test handling of mixed valid and expired evidence."""
+    def test_mixed_valid_and_expired_evidence_is_fail_closed(self):
+        """
+        Expired-by-time evidence is fail-closed: REJECT even when valid evidence co-exists.
+        Zero Drift correction: any expired evidence collapses ΔV to 0.
+        """
         response = self.engine.verify(
             target_id="mixed_test",
             requested_authority="ANALYZE",
@@ -372,15 +413,203 @@ class TestFixtureRegression(unittest.TestCase):
             current_timestamp="2026-07-14T10:00:00Z"
         )
 
-        # Should succeed with remaining valid evidence
-        self.assertEqual(response.decision, Decision.GRANT)
-        self.assertTrue(response.verified)
-        # Validation chain should show both
+        # Zero Drift: expired evidence collapses ΔV → REJECT, not GRANT
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        # Validation chain shows both entries
         self.assertEqual(len(response.evidence_lineage.validation), 2)
-        # One should be VALID, one EXPIRED
         statuses = [v.status for v in response.evidence_lineage.validation]
         self.assertIn(ValidationStatus.VALID, statuses)
         self.assertIn(ValidationStatus.EXPIRED, statuses)
+
+    def test_invalid_status_evidence_is_fail_closed(self):
+        """Evidence with data.verification_status='invalid' collapses ΔV to 0."""
+        response = self.engine.verify(
+            target_id="invalid_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-INVALID-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "invalid", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+
+    def test_unverified_status_evidence_is_fail_closed(self):
+        """Evidence with data.verification_status='unverified' collapses ΔV to 0."""
+        response = self.engine.verify(
+            target_id="unverified_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-UNVERIFIED-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "unverified", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+
+    def test_future_dated_evidence_is_fail_closed(self):
+        """Evidence with a future timestamp (timestamp > evaluation time) collapses ΔV to 0."""
+        response = self.engine.verify(
+            target_id="future_dated_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-FUTURE-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T11:00:00Z",  # Future: after evaluation time
+                    "data": {"verification_status": "valid", "confidence": 0.95}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+
+    def test_duplicate_evidence_id_raises_value_error(self):
+        """Duplicate evidence IDs must be rejected with ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="dup_id_test",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-DUP",
+                        "source": "source_a",
+                        "timestamp": "2026-07-14T09:00:00Z",
+                        "data": {"verification_status": "valid", "confidence": 0.9}
+                    },
+                    {
+                        "evidence_id": "EVD-DUP",
+                        "source": "source_b",
+                        "timestamp": "2026-07-14T09:30:00Z",
+                        "data": {"verification_status": "valid", "confidence": 0.8}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+        self.assertIn("EVD-DUP", str(ctx.exception))
+
+    def test_risk_score_bounded_to_unit_interval(self):
+        """risk_score must always be in [0.0, 1.0]."""
+        for confidence in [0.0, 0.5, 1.0]:
+            response = self.engine.verify(
+                target_id=f"risk_bound_test_{confidence}",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.1,
+                evidence_items=[
+                    {
+                        "evidence_id": f"EVD-RISK-{confidence}",
+                        "source": "telemetry",
+                        "timestamp": "2026-07-14T09:00:00Z",
+                        "data": {"verification_status": "valid", "confidence": confidence}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+            self.assertGreaterEqual(response.risk_score, 0.0)
+            self.assertLessEqual(response.risk_score, 1.0)
+
+    def test_validated_delta_a_grant_equals_requested(self):
+        """On GRANT, validated_delta_a equals requested_delta_a."""
+        response = self.engine.verify(
+            target_id="vda_grant_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.45,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-VDA-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.GRANT)
+        self.assertEqual(response.validated_delta_a, 0.45)
+
+    def test_validated_delta_a_reject_is_zero(self):
+        """On REJECT, validated_delta_a must be 0.0 regardless of requested value."""
+        response = self.engine.verify(
+            target_id="vda_reject_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.5,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-REJECT-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "invalid", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.validated_delta_a, 0.0)
+
+    def test_validated_delta_a_safe_lock_is_zero(self):
+        """On SAFE_LOCK, validated_delta_a must be 0.0."""
+        response = self.engine.verify(
+            target_id="vda_safe_lock_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.9,  # exceeds delta_v=0.75
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-SAFELOCK-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.SAFE_LOCK)
+        self.assertEqual(response.validated_delta_a, 0.0)
+
+    def test_signature_uses_hmac_sha256_label(self):
+        """Signature algorithm must use HMAC-SHA256 label."""
+        response = self.engine.verify(
+            target_id="sig_label_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-SIG-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.signature.algorithm, "HMAC-SHA256")
+        self.assertEqual(response.signature.timestamp, "2026-07-14T10:00:00Z")
 
 
 if __name__ == '__main__':

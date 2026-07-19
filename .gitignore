@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Nexus-Core generated telemetry and reports
+nexus_telemetry.csv
+nexus_telemetry_*.csv

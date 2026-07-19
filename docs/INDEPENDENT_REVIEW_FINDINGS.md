@@ -1,6 +1,21 @@
 Independent Review Findings
 ===========================
 
+## Status Notice
+
+This document was written against v0.1.0 of the Verification Engine.
+Two bugs found during the Zero Drift corrective package (v0.1.1) showed that
+the engine was NOT fully enforcing ΔA ≤ ΔV at the time of the original review:
+
+- Bug 1: Critical expired evidence (data.verification_status == "expired") did
+  not collapse ΔV to 0, allowing GRANT when REJECT was required.
+- Bug 2: validated_delta_a was set to requested_delta_a for all decisions,
+  including REJECT and SAFE_LOCK, violating the ΔA ≤ ΔV output invariant.
+
+The statement "Nexus-Core has validated local enforcement of ΔA ≤ ΔV" below
+applied to the simulation framework only and NOT to the Verification Engine.
+Engine enforcement is corrected as of v0.1.1.
+
 ## Summary
 
 ΔA ≤ ΔV remains a necessary governance constraint, but it is not sufficient by itself for safety-critical systems unless ΔV is strengthened.
@@ -49,9 +64,18 @@ not merely a local confidence score.
 
 ## Engineering Conclusion
 
-Nexus-Core has validated local enforcement of ΔA ≤ ΔV.
+Nexus-Core has validated local enforcement of ΔA ≤ ΔV in the simulation framework.
+
+The Verification Engine (v0.1.1) has corrected known output-level violations of ΔA ≤ ΔV.
 
 The next maturity stage is not more baseline testing. It is strengthening the trust model behind ΔV.
+
+## Certification and Production Status
+
+This project is a research framework. It is not certified for production, regulated,
+or safety-critical use. No independent third-party audit has been completed.
+Claims of "validated enforcement" refer only to the local simulation and engine test
+suite and do not constitute external certification.
 
 ## Status
 

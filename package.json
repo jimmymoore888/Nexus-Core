@@ -1,14 +1,13 @@
 {
   "name": "nexus-core",
-  "version": "1.0.0",
-  "description": "Nexus Core — the constitutional conduit for verified intelligence across the technology hierarchy. Verification Engine v0.1.",
+  "version": "1.4.0-beta.1",
+  "description": "Nexus Core — the constitutional conduit for verified intelligence across the technology hierarchy. Verification Engine v0.1.1.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "python -m pytest tests/test_verification_engine.py -v",
-    "test:python": "python -m unittest tests.test_verification_engine -v",
-    "test:node": "npm run test:fixtures",
-    "test:fixtures": "node tests/test_fixtures.js"
+    "test": "node tests/test_fixtures.js && node tests/test_invariants.js",
+    "test:fixtures": "node tests/test_fixtures.js",
+    "test:invariants": "node tests/test_invariants.js"
   },
   "keywords": [
     "nexus",

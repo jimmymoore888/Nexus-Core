@@ -129,11 +129,11 @@ Deploy the verification service to Google Cloud Run:
 
 ```bash
 # Build and push container
-gcloud builds submit --tag gcr.io/[PROJECT_ID]/nexus-ve:v0.1
+gcloud builds submit --tag gcr.io/[PROJECT_ID]/nexus-ve:v0.1.1
 
 # Deploy to Cloud Run
-gcloud run deploy nexus-ve-v0.1 \
-  --image gcr.io/[PROJECT_ID]/nexus-ve:v0.1 \
+gcloud run deploy nexus-ve-v0.1.1 \
+  --image gcr.io/[PROJECT_ID]/nexus-ve:v0.1.1 \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
@@ -219,7 +219,7 @@ The implementation adheres to NEX-ACF-001 conformance requirements:
 
 ---
 
-## Simulation Program v1.4
+## Simulation Program v1.4.0-beta.1
 
 Run the Nexus Adaptive Continuity Framework simulation harness:
 
@@ -235,7 +235,7 @@ python -m unittest -q tests.test_nexus_simulation
 
 # Nexus-Core
 ## Governance Through Verification
-### Version: v1.1.0-beta
+### Version: v1.4.0-beta.1
 ### Status: Specification Freeze
 ### Repository
 https://github.com/jimmymoore888/nexus-core
@@ -516,7 +516,7 @@ without requiring undocumented knowledge.
 
 Current Milestone:
 
-v1.1.0-beta
+v1.4.0-beta.1
 
 Current Phase:
 
