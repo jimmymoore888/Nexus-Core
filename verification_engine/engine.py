@@ -356,7 +356,7 @@ class VerificationEngine:
 
         Format requirements for cross-process parity:
         - UTF-8 JSON serialization
-        - lexicographically sorted keys
+        - alphabetically sorted keys
         - compact separators ("," and ":") with no extra whitespace
         """
         payload = {
