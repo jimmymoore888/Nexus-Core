@@ -45,29 +45,44 @@ app.post('/verify', (req, res) => {
       target_id,
       requested_authority,
       requested_delta_a,
-      evidence_items
+      evidence_items,
+      evaluation_timestamp
     } = req.body;
 
     // Validate request
-    if (!target_id || !requested_authority || requested_delta_a === undefined || !evidence_items) {
+    if (
+      !target_id ||
+      !requested_authority ||
+      requested_delta_a === undefined ||
+      !evidence_items ||
+      !evaluation_timestamp
+    ) {
       return res.status(400).json({
-        error: 'Missing required fields: target_id, requested_authority, requested_delta_a, evidence_items'
+        error: 'Missing required fields: target_id, requested_authority, requested_delta_a, evidence_items, evaluation_timestamp'
       });
     }
 
-    const now = new Date().toISOString();
     const response = verifyRequest(
       target_id,
       requested_authority,
       requested_delta_a,
       evidence_items,
-      now
+      evaluation_timestamp
     );
 
     res.json(response);
   } catch (err) {
     console.error('Verification error:', err);
-    if (err.message && err.message.startsWith('Duplicate evidence_id')) {
+    if (
+      err.message &&
+      (
+        err.message.startsWith('Duplicate evidence_id') ||
+        err.message.includes('requested_delta_a must be') ||
+        err.message.includes('must be an ISO 8601 UTC timestamp') ||
+        err.message.includes('must include a non-empty') ||
+        err.message.includes('must be an object')
+      )
+    ) {
       return res.status(400).json({ error: err.message });
     }
     res.status(500).json({ error: err.message });

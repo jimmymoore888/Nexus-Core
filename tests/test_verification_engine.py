@@ -445,6 +445,7 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertFalse(response.verified)
         self.assertEqual(response.delta_v, 0.0)
         self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
 
     def test_unverified_status_evidence_is_fail_closed(self):
         """Evidence with data.verification_status='unverified' collapses ΔV to 0."""
@@ -467,6 +468,52 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertFalse(response.verified)
         self.assertEqual(response.delta_v, 0.0)
         self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_unknown_status_evidence_is_fail_closed(self):
+        """Unknown verification_status must fail closed and never GRANT."""
+        response = self.engine.verify(
+            target_id="unknown_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-UNKNOWN-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "mystery", "confidence": 0.7}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_missing_status_evidence_is_fail_closed(self):
+        """Missing verification_status must fail closed and never GRANT."""
+        response = self.engine.verify(
+            target_id="missing_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-MISSING-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"confidence": 0.7}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
 
     def test_future_dated_evidence_is_fail_closed(self):
         """Evidence with a future timestamp (timestamp > evaluation time) collapses ΔV to 0."""
@@ -489,6 +536,52 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertFalse(response.verified)
         self.assertEqual(response.delta_v, 0.0)
         self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_malformed_evidence_timestamp_fails_closed(self):
+        """Malformed evidence timestamp must fail closed and never GRANT."""
+        response = self.engine.verify(
+            target_id="bad_evidence_timestamp",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-BAD-TS-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026/07/14 11:00:00",
+                    "data": {"verification_status": "valid", "confidence": 0.95}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_malformed_expires_at_fails_closed(self):
+        """Malformed expires_at must fail closed and never GRANT."""
+        response = self.engine.verify(
+            target_id="bad_expires_at",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-BAD-EXP-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "expires_at": "bad-expiration",
+                    "data": {"verification_status": "valid", "confidence": 0.95}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
 
     def test_duplicate_evidence_id_raises_value_error(self):
         """Duplicate evidence IDs must be rejected with ValueError."""
@@ -514,6 +607,34 @@ class TestFixtureRegression(unittest.TestCase):
                 current_timestamp="2026-07-14T10:00:00Z"
             )
         self.assertIn("EVD-DUP", str(ctx.exception))
+
+    def test_requested_delta_a_strict_validation(self):
+        """requested_delta_a must be finite numeric in [0,1]."""
+        bad_values = [-0.1, 1.1, float("nan"), float("inf"), "0.2", True, None]
+        for bad in bad_values:
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="bad_delta_a",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=bad,
+                        evidence_items=[],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_current_timestamp_strict_validation(self):
+        """current_timestamp must be strict ISO 8601 UTC with trailing Z."""
+        bad_timestamps = [None, "", "2026-07-14T10:00:00", "2026/07/14 10:00:00"]
+        for ts in bad_timestamps:
+            with self.subTest(timestamp=ts):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="bad_current_ts",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[],
+                        current_timestamp=ts,
+                    )
 
     def test_risk_score_bounded_to_unit_interval(self):
         """risk_score must always be in [0.0, 1.0]."""
@@ -610,6 +731,26 @@ class TestFixtureRegression(unittest.TestCase):
         )
         self.assertEqual(response.signature.algorithm, "SHA-256-DEMO-DIGEST")
         self.assertEqual(response.signature.timestamp, "2026-07-14T10:00:00Z")
+
+    def test_lineage_statuses_remain_contract_compatible(self):
+        """Lineage validation statuses must remain in VALID/EXPIRED/UNVERIFIED."""
+        response = self.engine.verify(
+            target_id="lineage_enum_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-LINEAGE-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T11:00:00Z",
+                    "data": {"verification_status": "invalid", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        allowed = {ValidationStatus.VALID, ValidationStatus.EXPIRED, ValidationStatus.UNVERIFIED}
+        for validation in response.evidence_lineage.validation:
+            self.assertIn(validation.status, allowed)
 
     def test_critical_flag_marks_failed_evidence(self):
         """Fail-closed evidence entries must be explicitly flagged critical."""

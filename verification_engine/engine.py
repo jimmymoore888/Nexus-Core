@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any
 import hashlib
 import json
+import math
+import re
 from verification_engine.models import (
     VerificationResponse,
     EvidenceLineage,
@@ -28,7 +30,13 @@ from verification_engine.models import (
     ValidationStatus,
 )
 
-# Evidence data statuses that constitute a critical failure and collapse ΔV to 0.
+# Strict UTC timestamp format required for deterministic cross-language behavior.
+_ISO_UTC_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+# Evidence status handling:
+# - "valid" contributes to delta_v only when all timestamp checks pass
+# - all other recognized statuses are fail-closed
+_RECOGNIZED_EVIDENCE_STATUSES = frozenset({"valid", "expired", "invalid", "unverified"})
 _CRITICAL_FAILED_STATUSES = frozenset({"expired", "invalid", "unverified"})
 
 
@@ -73,8 +81,10 @@ class VerificationEngine:
             ValueError: If evidence is malformed, required fields are missing,
                         or duplicate evidence IDs are present
         """
-        # Evaluation timestamp — derived from the explicit caller-supplied value
-        current_dt = datetime.fromisoformat(current_timestamp.replace("Z", "+00:00"))
+        requested_delta_a = self._validate_requested_delta_a(requested_delta_a)
+        current_dt = self._parse_utc_timestamp(
+            current_timestamp, field_name="current_timestamp"
+        )
 
         valid_evidence = []
         evidence_sources: List[str] = []
@@ -82,16 +92,30 @@ class VerificationEngine:
         contribution_map: Dict[str, float] = {}
         total_valid_risk_contribution = 0.0
         has_critical_failure = False
+        has_invalid_evidence = False
 
         # Duplicate-ID detection
         seen_ids: set = set()
 
         for evidence in evidence_items:
-            evidence_id = evidence["evidence_id"]
-            source = evidence["source"]
-            timestamp = evidence["timestamp"]
+            if not isinstance(evidence, dict):
+                raise ValueError("Each evidence item must be an object.")
+
+            evidence_id = evidence.get("evidence_id")
+            if not isinstance(evidence_id, str) or not evidence_id.strip():
+                raise ValueError("Each evidence item must include a non-empty evidence_id string.")
+
+            source = evidence.get("source")
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError(
+                    f"Evidence '{evidence_id}' must include a non-empty source string."
+                )
+
+            timestamp = evidence.get("timestamp")
+            timestamp_for_lineage = timestamp if isinstance(timestamp, str) else ""
             confidence = float(evidence.get("data", {}).get("confidence", 0.0))
-            data_status = str(evidence.get("data", {}).get("verification_status", "")).lower()
+            raw_status = evidence.get("data", {}).get("verification_status", "")
+            data_status = raw_status.strip().lower() if isinstance(raw_status, str) else ""
 
             # Reject duplicate evidence IDs immediately
             if evidence_id in seen_ids:
@@ -107,33 +131,85 @@ class VerificationEngine:
 
             # --- Critical failure detection (fail-closed) ---
 
-            # 1. Explicit failure status in evidence data
-            if data_status in _CRITICAL_FAILED_STATUSES:
+            # 1. verification_status must be recognized and explicitly valid
+            if data_status not in _RECOGNIZED_EVIDENCE_STATUSES:
                 has_critical_failure = True
+                has_invalid_evidence = True
                 validation_chain.append(
                     ValidationRecord(
                         evidence_id=evidence_id,
-                        timestamp=timestamp,
-                        status=ValidationStatus.EXPIRED
-                        if data_status == "expired"
-                        else ValidationStatus.INVALID,
+                        timestamp=timestamp_for_lineage,
+                        status=ValidationStatus.UNVERIFIED,
                         critical=True,
                     )
                 )
                 contribution_map[evidence_id] = 0.0
                 continue
 
-            # 2. Time-based expiration (expires_at ≤ current_timestamp)
-            if "expires_at" in evidence:
-                expires_at = datetime.fromisoformat(
-                    evidence["expires_at"].replace("Z", "+00:00")
+            # 2. Explicit failure status in evidence data
+            if data_status in _CRITICAL_FAILED_STATUSES:
+                has_critical_failure = True
+                if data_status != "expired":
+                    has_invalid_evidence = True
+                validation_chain.append(
+                    ValidationRecord(
+                        evidence_id=evidence_id,
+                        timestamp=timestamp_for_lineage,
+                        status=ValidationStatus.EXPIRED
+                        if data_status == "expired"
+                        else ValidationStatus.UNVERIFIED,
+                        critical=True,
+                    )
                 )
+                contribution_map[evidence_id] = 0.0
+                continue
+
+            # 3. evidence.timestamp is required and strictly validated
+            try:
+                evidence_dt = self._parse_utc_timestamp(
+                    timestamp, field_name=f"evidence '{evidence_id}' timestamp"
+                )
+            except ValueError:
+                has_critical_failure = True
+                has_invalid_evidence = True
+                validation_chain.append(
+                    ValidationRecord(
+                        evidence_id=evidence_id,
+                        timestamp=timestamp_for_lineage,
+                        status=ValidationStatus.UNVERIFIED,
+                        critical=True,
+                    )
+                )
+                contribution_map[evidence_id] = 0.0
+                continue
+
+            # 4. Time-based expiration (expires_at ≤ current_timestamp)
+            if "expires_at" in evidence:
+                try:
+                    expires_at = self._parse_utc_timestamp(
+                        evidence["expires_at"],
+                        field_name=f"evidence '{evidence_id}' expires_at",
+                    )
+                except ValueError:
+                    has_critical_failure = True
+                    has_invalid_evidence = True
+                    validation_chain.append(
+                        ValidationRecord(
+                            evidence_id=evidence_id,
+                            timestamp=timestamp_for_lineage,
+                            status=ValidationStatus.UNVERIFIED,
+                            critical=True,
+                        )
+                    )
+                    contribution_map[evidence_id] = 0.0
+                    continue
+
                 if current_dt >= expires_at:
                     has_critical_failure = True
                     validation_chain.append(
                         ValidationRecord(
                             evidence_id=evidence_id,
-                            timestamp=timestamp,
+                            timestamp=timestamp_for_lineage,
                             status=ValidationStatus.EXPIRED,
                             critical=True,
                         )
@@ -141,31 +217,15 @@ class VerificationEngine:
                     contribution_map[evidence_id] = 0.0
                     continue
 
-            # 3. Future-dated evidence (timestamp > current_timestamp)
-            try:
-                evidence_dt = datetime.fromisoformat(
-                    timestamp.replace("Z", "+00:00")
-                )
-                if evidence_dt > current_dt:
-                    has_critical_failure = True
-                    validation_chain.append(
-                        ValidationRecord(
-                            evidence_id=evidence_id,
-                            timestamp=timestamp,
-                            status=ValidationStatus.INVALID,
-                            critical=True,
-                        )
-                    )
-                    contribution_map[evidence_id] = 0.0
-                    continue
-            except ValueError:
-                # Unparseable timestamp — treat as invalid
+            # 5. Future-dated evidence (timestamp > current_timestamp)
+            if evidence_dt > current_dt:
                 has_critical_failure = True
+                has_invalid_evidence = True
                 validation_chain.append(
                     ValidationRecord(
                         evidence_id=evidence_id,
-                        timestamp=timestamp,
-                        status=ValidationStatus.INVALID,
+                        timestamp=timestamp_for_lineage,
+                        status=ValidationStatus.UNVERIFIED,
                         critical=True,
                     )
                 )
@@ -177,7 +237,7 @@ class VerificationEngine:
             validation_chain.append(
                 ValidationRecord(
                     evidence_id=evidence_id,
-                    timestamp=timestamp,
+                    timestamp=timestamp_for_lineage,
                     status=ValidationStatus.VALID,
                     critical=False,
                 )
@@ -203,10 +263,7 @@ class VerificationEngine:
         verification_margin = delta_v - requested_delta_a
 
         # Determine decision
-        has_failed_evidence = any(
-            v.status in (ValidationStatus.EXPIRED, ValidationStatus.INVALID)
-            for v in validation_chain
-        )
+        has_failed_evidence = any(v.status != ValidationStatus.VALID for v in validation_chain)
         decision, target_verified = self._make_decision(
             requested_delta_a=requested_delta_a,
             delta_v=delta_v,
@@ -218,11 +275,15 @@ class VerificationEngine:
         # Validation result
         if has_failed_evidence:
             # Prefer EXPIRED over INVALID for backward compat with fixtures
-            validation_result = (
-                ValidationStatus.EXPIRED
-                if any(v.status == ValidationStatus.EXPIRED for v in validation_chain)
-                else ValidationStatus.INVALID
+            has_expired_evidence = any(
+                v.status == ValidationStatus.EXPIRED for v in validation_chain
             )
+            if has_expired_evidence:
+                validation_result = ValidationStatus.EXPIRED
+            elif has_invalid_evidence:
+                validation_result = ValidationStatus.INVALID
+            else:
+                validation_result = ValidationStatus.UNVERIFIED
         elif valid_evidence:
             validation_result = ValidationStatus.VALID
         else:
@@ -322,11 +383,18 @@ class VerificationEngine:
             principle = "ΔA ≤ ΔV satisfied"
         elif decision == Decision.REJECT:
             if has_failed:
-                reasoning = (
-                    f"Critical evidence failed. Target state unverified with remaining evidence. "
-                    f"ΔA ({delta_a}) > ΔV ({delta_v}) after failure. "
-                    f"Request-level REJECT: insufficient verification capacity."
-                )
+                if verification_margin < 0:
+                    reasoning = (
+                        f"Critical evidence failed. "
+                        f"Request exceeds verification capacity after fail-closed evaluation: "
+                        f"ΔA ({delta_a}) > ΔV ({delta_v}). "
+                        f"Request-level REJECT."
+                    )
+                else:
+                    reasoning = (
+                        f"Critical evidence failed fail-closed validation. "
+                        f"Request-level REJECT even though ΔA ({delta_a}) ≤ ΔV ({delta_v})."
+                    )
                 principle = "ΔA ≤ ΔV failed; fail-closed due to critical evidence failure"
             else:
                 reasoning = (
@@ -365,3 +433,29 @@ class VerificationEngine:
             "target_id": target_id,
         }
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    def _validate_requested_delta_a(self, requested_delta_a: Any) -> float:
+        """Validate requested_delta_a as a finite numeric value within [0, 1]."""
+        if isinstance(requested_delta_a, bool) or not isinstance(
+            requested_delta_a, (int, float)
+        ):
+            raise ValueError(
+                "requested_delta_a must be a finite numeric value in [0.0, 1.0]."
+            )
+        value = float(requested_delta_a)
+        if not math.isfinite(value) or value < 0.0 or value > 1.0:
+            raise ValueError(
+                "requested_delta_a must be a finite numeric value in [0.0, 1.0]."
+            )
+        return value
+
+    def _parse_utc_timestamp(self, value: Any, field_name: str) -> datetime:
+        """
+        Parse strict UTC timestamps of format YYYY-MM-DDTHH:MM:SSZ.
+        Raises ValueError on missing/malformed values.
+        """
+        if not isinstance(value, str) or not _ISO_UTC_TIMESTAMP_RE.match(value):
+            raise ValueError(
+                f"{field_name} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ."
+            )
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)

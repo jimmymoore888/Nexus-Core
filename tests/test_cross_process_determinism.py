@@ -95,6 +95,110 @@ class TestCrossProcessDeterminism(unittest.TestCase):
         self.assertIn("Duplicate evidence_id", str(py_err.exception))
         self.assertIn("Duplicate evidence_id", node_result["error"])
 
+    def test_unknown_verification_status_fails_closed_with_parity(self):
+        request_payload = {
+            "target_id": "status_unknown",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": 0.2,
+            "evidence_items": [
+                {
+                    "evidence_id": "E1",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "mystery", "confidence": 0.9},
+                }
+            ],
+        }
+        py_response = self.engine.verify(
+            target_id=request_payload["target_id"],
+            requested_authority=request_payload["requested_authority"],
+            requested_delta_a=request_payload["requested_delta_a"],
+            evidence_items=request_payload["evidence_items"],
+            current_timestamp="2026-07-14T10:00:00Z",
+        ).to_dict()
+        node_result = _run_node_verify(request_payload, "2026-07-14T10:00:00Z")
+        self.assertTrue(node_result["ok"], node_result.get("error"))
+        node_response = node_result["response"]
+        self.assertEqual(py_response["decision"], "REJECT")
+        self.assertEqual(py_response["delta_v"], 0.0)
+        self.assertEqual(py_response["validated_delta_a"], 0.0)
+        self.assertEqual(py_response["evidence_lineage"]["validation"][0]["status"], "UNVERIFIED")
+        self.assertEqual(py_response["validation_result"], "INVALID")
+        self.assertEqual(py_response["decision"], node_response["decision"])
+        self.assertEqual(py_response["validation_result"], node_response["validation_result"])
+        self.assertEqual(
+            py_response["evidence_lineage"]["validation"],
+            node_response["evidence_lineage"]["validation"],
+        )
+
+    def test_missing_verification_status_fails_closed_with_parity(self):
+        request_payload = {
+            "target_id": "status_missing",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": 0.2,
+            "evidence_items": [
+                {
+                    "evidence_id": "E1",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"confidence": 0.9},
+                }
+            ],
+        }
+        self._assert_python_node_match(request_payload, "2026-07-14T10:00:00Z")
+        py_response = self.engine.verify(
+            target_id=request_payload["target_id"],
+            requested_authority=request_payload["requested_authority"],
+            requested_delta_a=request_payload["requested_delta_a"],
+            evidence_items=request_payload["evidence_items"],
+            current_timestamp="2026-07-14T10:00:00Z",
+        ).to_dict()
+        self.assertEqual(py_response["decision"], "REJECT")
+        self.assertEqual(py_response["delta_v"], 0.0)
+        self.assertEqual(py_response["validated_delta_a"], 0.0)
+
+    def test_invalid_requested_delta_a_match_error(self):
+        request_payload = {
+            "target_id": "bad_delta",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": "0.2",
+            "evidence_items": [],
+        }
+
+        with self.assertRaises(ValueError) as py_err:
+            self.engine.verify(
+                target_id=request_payload["target_id"],
+                requested_authority=request_payload["requested_authority"],
+                requested_delta_a=request_payload["requested_delta_a"],
+                evidence_items=request_payload["evidence_items"],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        node_result = _run_node_verify(request_payload, "2026-07-14T10:00:00Z")
+        self.assertFalse(node_result["ok"])
+        self.assertIn("requested_delta_a must be", str(py_err.exception))
+        self.assertIn("requested_delta_a must be", node_result["error"])
+
+    def test_invalid_current_timestamp_match_error(self):
+        request_payload = {
+            "target_id": "bad_ts",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": 0.2,
+            "evidence_items": [],
+        }
+
+        with self.assertRaises(ValueError) as py_err:
+            self.engine.verify(
+                target_id=request_payload["target_id"],
+                requested_authority=request_payload["requested_authority"],
+                requested_delta_a=request_payload["requested_delta_a"],
+                evidence_items=request_payload["evidence_items"],
+                current_timestamp="2026-07-14 10:00:00",
+            )
+        node_result = _run_node_verify(request_payload, "2026-07-14 10:00:00")
+        self.assertFalse(node_result["ok"])
+        self.assertIn("current_timestamp must be", str(py_err.exception))
+        self.assertIn("current_timestamp must be", node_result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,8 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/test_fixtures.js && node tests/test_invariants.js",
+    "test": "node tests/test_fixtures.js && node tests/test_server.js && node tests/test_invariants.js",
     "test:fixtures": "node tests/test_fixtures.js",
+    "test:server": "node tests/test_server.js",
     "test:invariants": "node tests/test_invariants.js"
   },
   "keywords": [

@@ -144,6 +144,7 @@ test('invalid-status evidence collapses delta_v to 0', () => {
   assert.strictEqual(resp.decision, 'REJECT');
   assert.strictEqual(resp.delta_v, 0.0);
   assert.strictEqual(resp.validated_delta_a, 0.0);
+  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
 });
 
 test('unverified-status evidence collapses delta_v to 0', () => {
@@ -154,6 +155,31 @@ test('unverified-status evidence collapses delta_v to 0', () => {
   assert.strictEqual(resp.decision, 'REJECT');
   assert.strictEqual(resp.delta_v, 0.0);
   assert.strictEqual(resp.validated_delta_a, 0.0);
+  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
+});
+
+test('unknown-status evidence collapses delta_v to 0', () => {
+  const resp = verifyRequest('unknown_test', 'ANALYZE', 0.2, [
+    { evidence_id: 'E-UNK', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
+      data: { verification_status: 'mystery', confidence: 0.95 } }
+  ], '2026-07-14T10:00:00Z');
+  assert.strictEqual(resp.decision, 'REJECT');
+  assert.strictEqual(resp.delta_v, 0.0);
+  assert.strictEqual(resp.validated_delta_a, 0.0);
+  assert.strictEqual(resp.validation_result, 'INVALID');
+  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
+});
+
+test('missing-status evidence collapses delta_v to 0', () => {
+  const resp = verifyRequest('missing_status_test', 'ANALYZE', 0.2, [
+    { evidence_id: 'E-MISS', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
+      data: { confidence: 0.95 } }
+  ], '2026-07-14T10:00:00Z');
+  assert.strictEqual(resp.decision, 'REJECT');
+  assert.strictEqual(resp.delta_v, 0.0);
+  assert.strictEqual(resp.validated_delta_a, 0.0);
+  assert.strictEqual(resp.validation_result, 'INVALID');
+  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
 });
 
 test('future-dated evidence collapses delta_v to 0', () => {
@@ -164,6 +190,32 @@ test('future-dated evidence collapses delta_v to 0', () => {
   assert.strictEqual(resp.decision, 'REJECT');
   assert.strictEqual(resp.delta_v, 0.0);
   assert.strictEqual(resp.validated_delta_a, 0.0);
+  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
+});
+
+test('malformed evidence timestamp collapses delta_v to 0', () => {
+  const resp = verifyRequest('bad_ts_test', 'ANALYZE', 0.2, [
+    { evidence_id: 'E-BAD-TS', source: 'telemetry', timestamp: '2026/07/14 09:00:00',
+      data: { verification_status: 'valid', confidence: 0.95 } }
+  ], '2026-07-14T10:00:00Z');
+  assert.strictEqual(resp.decision, 'REJECT');
+  assert.strictEqual(resp.delta_v, 0.0);
+  assert.strictEqual(resp.validated_delta_a, 0.0);
+  assert.strictEqual(resp.validation_result, 'INVALID');
+  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
+});
+
+test('malformed expires_at collapses delta_v to 0', () => {
+  const resp = verifyRequest('bad_exp_test', 'ANALYZE', 0.2, [
+    { evidence_id: 'E-BAD-EXP', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
+      expires_at: 'not-a-timestamp',
+      data: { verification_status: 'valid', confidence: 0.95 } }
+  ], '2026-07-14T10:00:00Z');
+  assert.strictEqual(resp.decision, 'REJECT');
+  assert.strictEqual(resp.delta_v, 0.0);
+  assert.strictEqual(resp.validated_delta_a, 0.0);
+  assert.strictEqual(resp.validation_result, 'INVALID');
+  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
 });
 
 test('mixed valid+expired is fail-closed (REJECT, not GRANT)', () => {
@@ -259,6 +311,38 @@ test('risk_score is bounded to [0, 1]', () => {
   }
 });
 
+test('requested_delta_a invalid values throw deterministic errors', () => {
+  const badValues = [-0.1, 1.1, NaN, Infinity, '0.2', true, null, undefined];
+  for (const value of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        'bad_da_test',
+        'ANALYZE',
+        value,
+        [],
+        '2026-07-14T10:00:00Z'
+      ),
+      /requested_delta_a must be/
+    );
+  }
+});
+
+test('current_timestamp must be strict ISO UTC format', () => {
+  const badValues = ['', null, '2026-07-14T10:00:00', '2026/07/14 10:00:00'];
+  for (const ts of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        'bad_time_test',
+        'ANALYZE',
+        0.2,
+        [],
+        ts
+      ),
+      /current_timestamp must be/
+    );
+  }
+});
+
 test('signature algorithm is SHA-256-DEMO-DIGEST', () => {
   const resp = verifyRequest('sig_test', 'ANALYZE', 0.2, [
     { evidence_id: 'E1', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
@@ -282,6 +366,17 @@ test('critical flag is false for valid evidence entries', () => {
       data: { verification_status: 'valid', confidence: 0.9 } }
   ], '2026-07-14T10:00:00Z');
   assert.strictEqual(resp.evidence_lineage.validation[0].critical, false);
+});
+
+test('lineage statuses remain in VALID/EXPIRED/UNVERIFIED', () => {
+  const resp = verifyRequest('lineage_status_test', 'ANALYZE', 0.2, [
+    { evidence_id: 'E-INV', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
+      data: { verification_status: 'invalid', confidence: 0.0 } }
+  ], '2026-07-14T10:00:00Z');
+  const allowed = new Set(['VALID', 'EXPIRED', 'UNVERIFIED']);
+  for (const v of resp.evidence_lineage.validation) {
+    assert(allowed.has(v.status), `unexpected lineage status ${v.status}`);
+  }
 });
 
 test('canonicalStringify sorts nested keys deterministically', () => {

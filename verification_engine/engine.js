@@ -19,6 +19,8 @@
 const crypto = require('crypto');
 
 /** Evidence data statuses that constitute a critical failure and collapse ΔV to 0. */
+const ISO_UTC_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const RECOGNIZED_EVIDENCE_STATUSES = new Set(['valid', 'expired', 'invalid', 'unverified']);
 const CRITICAL_FAILED_STATUSES = new Set(['expired', 'invalid', 'unverified']);
 
 /**
@@ -33,7 +35,8 @@ const CRITICAL_FAILED_STATUSES = new Set(['expired', 'invalid', 'unverified']);
  * @throws {Error} if duplicate evidence IDs are present
  */
 function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceItems, currentTimestamp) {
-  const currentDt = new Date(currentTimestamp);
+  const normalizedRequestedDeltaA = validateRequestedDeltaA(requestedDeltaA);
+  const currentDt = parseUtcTimestamp(currentTimestamp, 'current_timestamp');
 
   const validEvidence = [];
   const evidenceSources = [];
@@ -41,18 +44,32 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
   const contributionMap = {};
   let totalValidRiskContribution = 0.0;
   let hasCriticalFailure = false;
+  let hasInvalidEvidence = false;
 
   // Duplicate-ID detection
   const seenIds = new Set();
 
   for (const evidence of evidenceItems) {
+    if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
+      throw new Error('Each evidence item must be an object.');
+    }
+
     const evidenceId = evidence.evidence_id;
+    if (typeof evidenceId !== 'string' || evidenceId.trim() === '') {
+      throw new Error('Each evidence item must include a non-empty evidence_id string.');
+    }
+
     const source = evidence.source;
+    if (typeof source !== 'string' || source.trim() === '') {
+      throw new Error(`Evidence '${evidenceId}' must include a non-empty source string.`);
+    }
+
     const timestamp = evidence.timestamp;
+    const timestampForLineage = typeof timestamp === 'string' ? timestamp : '';
     const confidence = parseFloat((evidence.data && evidence.data.confidence != null)
       ? evidence.data.confidence : 0.0);
-    const dataStatus = ((evidence.data && evidence.data.verification_status)
-      ? evidence.data.verification_status : '').toLowerCase();
+    const rawStatus = evidence.data ? evidence.data.verification_status : '';
+    const dataStatus = (typeof rawStatus === 'string') ? rawStatus.trim().toLowerCase() : '';
 
     // Reject duplicate evidence IDs immediately
     if (seenIds.has(evidenceId)) {
@@ -69,27 +86,75 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
 
     // --- Critical failure detection (fail-closed) ---
 
-    // 1. Explicit failure status in evidence data
-    if (CRITICAL_FAILED_STATUSES.has(dataStatus)) {
+    // 1. verification_status must be recognized and explicitly valid
+    if (!RECOGNIZED_EVIDENCE_STATUSES.has(dataStatus)) {
       hasCriticalFailure = true;
+      hasInvalidEvidence = true;
       validationChain.push({
         evidence_id: evidenceId,
-        timestamp: timestamp,
-        status: dataStatus === 'expired' ? 'EXPIRED' : 'INVALID',
+        timestamp: timestampForLineage,
+        status: 'UNVERIFIED',
         critical: true
       });
       contributionMap[evidenceId] = 0.0;
       continue;
     }
 
-    // 2. Time-based expiration (expires_at <= currentTimestamp)
-    if (evidence.expires_at) {
-      const expiresAt = new Date(evidence.expires_at);
+    // 2. Explicit failure status in evidence data
+    if (CRITICAL_FAILED_STATUSES.has(dataStatus)) {
+      hasCriticalFailure = true;
+      if (dataStatus !== 'expired') {
+        hasInvalidEvidence = true;
+      }
+      validationChain.push({
+        evidence_id: evidenceId,
+        timestamp: timestampForLineage,
+        status: dataStatus === 'expired' ? 'EXPIRED' : 'UNVERIFIED',
+        critical: true
+      });
+      contributionMap[evidenceId] = 0.0;
+      continue;
+    }
+
+    // 3. evidence.timestamp is required and strictly validated
+    let evidenceDt;
+    try {
+      evidenceDt = parseUtcTimestamp(timestamp, `evidence '${evidenceId}' timestamp`);
+    } catch (_) {
+      hasCriticalFailure = true;
+      hasInvalidEvidence = true;
+      validationChain.push({
+        evidence_id: evidenceId,
+        timestamp: timestampForLineage,
+        status: 'UNVERIFIED',
+        critical: true
+      });
+      contributionMap[evidenceId] = 0.0;
+      continue;
+    }
+
+    // 4. Time-based expiration (expires_at <= currentTimestamp)
+    if (Object.prototype.hasOwnProperty.call(evidence, 'expires_at')) {
+      let expiresAt;
+      try {
+        expiresAt = parseUtcTimestamp(evidence.expires_at, `evidence '${evidenceId}' expires_at`);
+      } catch (_) {
+        hasCriticalFailure = true;
+        hasInvalidEvidence = true;
+        validationChain.push({
+          evidence_id: evidenceId,
+          timestamp: timestampForLineage,
+          status: 'UNVERIFIED',
+          critical: true
+        });
+        contributionMap[evidenceId] = 0.0;
+        continue;
+      }
       if (currentDt >= expiresAt) {
         hasCriticalFailure = true;
         validationChain.push({
           evidence_id: evidenceId,
-          timestamp: timestamp,
+          timestamp: timestampForLineage,
           status: 'EXPIRED',
           critical: true
         });
@@ -98,31 +163,14 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
       }
     }
 
-    // 3. Future-dated evidence (timestamp > currentTimestamp)
-    let evidenceDt;
-    try {
-      evidenceDt = new Date(timestamp);
-      if (isNaN(evidenceDt.getTime())) {
-        throw new Error('Invalid date');
-      }
-    } catch (_) {
-      hasCriticalFailure = true;
-      validationChain.push({
-        evidence_id: evidenceId,
-        timestamp: timestamp,
-        status: 'INVALID',
-        critical: true
-      });
-      contributionMap[evidenceId] = 0.0;
-      continue;
-    }
-
+    // 5. Future-dated evidence (timestamp > currentTimestamp)
     if (evidenceDt > currentDt) {
       hasCriticalFailure = true;
+      hasInvalidEvidence = true;
       validationChain.push({
         evidence_id: evidenceId,
-        timestamp: timestamp,
-        status: 'INVALID',
+        timestamp: timestampForLineage,
+        status: 'UNVERIFIED',
         critical: true
       });
       contributionMap[evidenceId] = 0.0;
@@ -133,7 +181,7 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
     validEvidence.push(evidence);
     validationChain.push({
       evidence_id: evidenceId,
-      timestamp: timestamp,
+      timestamp: timestampForLineage,
       status: 'VALID',
       critical: false
     });
@@ -158,12 +206,10 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
   const riskScore = Math.max(0.0, Math.min(1.0, rawRisk));
 
   // Verification margin
-  const verificationMargin = deltaV - requestedDeltaA;
+  const verificationMargin = deltaV - normalizedRequestedDeltaA;
 
   // Determine whether any evidence failed
-  const hasFailedEvidence = validationChain.some(
-    v => v.status === 'EXPIRED' || v.status === 'INVALID'
-  );
+  const hasFailedEvidence = validationChain.some(v => v.status !== 'VALID');
 
   // Decision logic
   let decision, verified;
@@ -188,7 +234,13 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
   let validationResult;
   if (hasFailedEvidence) {
     const hasExpired = validationChain.some(v => v.status === 'EXPIRED');
-    validationResult = hasExpired ? 'EXPIRED' : 'INVALID';
+    if (hasExpired) {
+      validationResult = 'EXPIRED';
+    } else if (hasInvalidEvidence) {
+      validationResult = 'INVALID';
+    } else {
+      validationResult = 'UNVERIFIED';
+    }
   } else if (validEvidence.length > 0) {
     validationResult = 'VALID';
   } else {
@@ -196,11 +248,11 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
   }
 
   // validated_delta_a: requested value for GRANT only; 0.0 for REJECT/SAFE_LOCK
-  const validatedDeltaA = decision === 'GRANT' ? requestedDeltaA : 0.0;
+  const validatedDeltaA = decision === 'GRANT' ? normalizedRequestedDeltaA : 0.0;
 
   // Build decision context using explicit evaluation timestamp
   const decisionContext = buildDecisionContext(
-    decision, requestedDeltaA, deltaV, verificationMargin, hasFailedEvidence, currentTimestamp
+    decision, normalizedRequestedDeltaA, deltaV, verificationMargin, hasFailedEvidence, currentTimestamp
   );
 
   // Deterministic demo digest over canonical UTF-8 payload.
@@ -239,7 +291,11 @@ function buildDecisionContext(decision, deltaA, deltaV, verificationMargin, hasF
     principle = 'ΔA ≤ ΔV satisfied';
   } else if (decision === 'REJECT') {
     if (hasFailed) {
-      reasoning = `Critical evidence failed. Target state unverified with remaining evidence. ΔA (${deltaA}) > ΔV (${deltaV}) after failure. Request-level REJECT: insufficient verification capacity.`;
+      if (verificationMargin < 0) {
+        reasoning = `Critical evidence failed. Request exceeds verification capacity after fail-closed evaluation: ΔA (${deltaA}) > ΔV (${deltaV}). Request-level REJECT.`;
+      } else {
+        reasoning = `Critical evidence failed fail-closed validation. Request-level REJECT even though ΔA (${deltaA}) ≤ ΔV (${deltaV}).`;
+      }
       principle = 'ΔA ≤ ΔV failed; fail-closed due to critical evidence failure';
     } else {
       reasoning = `Insufficient verification capacity. ΔA (${deltaA}) > ΔV (${deltaV}). Request-level REJECT.`;
@@ -267,6 +323,27 @@ function generateSignature(targetId, timestamp) {
     target_id: targetId
   });
   return crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
+}
+
+function validateRequestedDeltaA(value) {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+    throw new Error('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
+  }
+  if (value < 0.0 || value > 1.0) {
+    throw new Error('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
+  }
+  return value;
+}
+
+function parseUtcTimestamp(value, fieldName) {
+  if (typeof value !== 'string' || !ISO_UTC_TIMESTAMP_RE.test(value)) {
+    throw new Error(`${fieldName} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ.`);
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${fieldName} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ.`);
+  }
+  return parsed;
 }
 
 // Canonical stringifier for deterministic signature payloads only.
