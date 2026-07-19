@@ -1,0 +1,7 @@
+{
+  "report_type": "internal_verification_report",
+  "actual_constraint_violations": 0,
+  "final_verification_debt": 0.0,
+  "no_drift": true,
+  "cycles": 100000
+}
