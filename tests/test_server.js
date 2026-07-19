@@ -135,6 +135,98 @@ async function main() {
       assert(/current_timestamp|ISO 8601 UTC/.test(res.body.error));
     });
 
+    await test('server returns 400 for malformed input adversarial cases', async () => {
+      const cases = [
+        {
+          name: 'target_id non-string',
+          payload: { ...basePayload, target_id: null },
+          pattern: /target_id must be a non-empty string/
+        },
+        {
+          name: 'requested_authority non-string',
+          payload: { ...basePayload, requested_authority: null },
+          pattern: /requested_authority must be a non-empty string/
+        },
+        {
+          name: 'evidence_items object',
+          payload: { ...basePayload, evidence_items: {} },
+          pattern: /evidence_items must be an array/
+        },
+        {
+          name: 'evidence item non-object',
+          payload: { ...basePayload, evidence_items: ['bad'] },
+          pattern: /Each evidence item must be an object/
+        },
+        {
+          name: 'evidence.data non-object',
+          payload: {
+            ...basePayload,
+            evidence_items: [
+              {
+                evidence_id: 'E1',
+                source: 'telemetry',
+                timestamp: '2026-07-14T09:00:00Z',
+                data: 'bad'
+              }
+            ]
+          },
+          pattern: /data must be an object/
+        },
+        {
+          name: 'confidence attack string',
+          payload: {
+            ...basePayload,
+            evidence_items: [
+              {
+                evidence_id: 'E1',
+                source: 'telemetry',
+                timestamp: '2026-07-14T09:00:00Z',
+                data: { verification_status: 'valid', confidence: 'bad' }
+              }
+            ]
+          },
+          pattern: /confidence must be a finite numeric value/
+        },
+        {
+          name: 'malformed evidence timestamp with unknown status',
+          payload: {
+            ...basePayload,
+            evidence_items: [
+              {
+                evidence_id: 'E1',
+                source: 'telemetry',
+                timestamp: 'not-a-timestamp',
+                data: { verification_status: 'mystery', confidence: 0.5 }
+              }
+            ]
+          },
+          pattern: /timestamp must be an ISO 8601 UTC timestamp/
+        },
+        {
+          name: 'malformed expires_at',
+          payload: {
+            ...basePayload,
+            evidence_items: [
+              {
+                evidence_id: 'E1',
+                source: 'telemetry',
+                timestamp: '2026-07-14T09:00:00Z',
+                expires_at: 'bad-expiration',
+                data: { verification_status: 'valid', confidence: 0.9 }
+              }
+            ]
+          },
+          pattern: /expires_at must be an ISO 8601 UTC timestamp/
+        }
+      ];
+
+      for (const tc of cases) {
+        const res = await postJson(port, tc.payload);
+        assert.strictEqual(res.statusCode, 400, `${tc.name} should return HTTP 400`);
+        assert(tc.pattern.test(res.body.error), `${tc.name} error mismatch: ${res.body.error}`);
+      }
+    });
+
     await test('identical request + evaluation_timestamp is deterministic over HTTP', async () => {
       const res1 = await postJson(port, basePayload);
       const res2 = await postJson(port, basePayload);

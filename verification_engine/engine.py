@@ -81,6 +81,11 @@ class VerificationEngine:
             ValueError: If evidence is malformed, required fields are missing,
                         or duplicate evidence IDs are present
         """
+        target_id = self._validate_non_empty_string(target_id, "target_id")
+        requested_authority = self._validate_non_empty_string(
+            requested_authority, "requested_authority"
+        )
+        evidence_items = self._validate_evidence_items(evidence_items)
         requested_delta_a = self._validate_requested_delta_a(requested_delta_a)
         current_dt = self._parse_utc_timestamp(
             current_timestamp, field_name="current_timestamp"
@@ -112,10 +117,28 @@ class VerificationEngine:
                 )
 
             timestamp = evidence.get("timestamp")
-            timestamp_for_lineage = timestamp if isinstance(timestamp, str) else ""
-            confidence = float(evidence.get("data", {}).get("confidence", 0.0))
-            raw_status = evidence.get("data", {}).get("verification_status", "")
+            evidence_dt = self._parse_utc_timestamp(
+                timestamp, field_name=f"evidence '{evidence_id}' timestamp"
+            )
+            timestamp_for_lineage = timestamp
+
+            expires_at = None
+            if "expires_at" in evidence:
+                expires_at = self._parse_utc_timestamp(
+                    evidence["expires_at"],
+                    field_name=f"evidence '{evidence_id}' expires_at",
+                )
+
+            data = evidence.get("data")
+            if not isinstance(data, dict):
+                raise ValueError(
+                    f"Evidence '{evidence_id}' data must be an object."
+                )
+            raw_status = data.get("verification_status", "")
             data_status = raw_status.strip().lower() if isinstance(raw_status, str) else ""
+            confidence = self._validate_confidence(
+                data.get("confidence"), evidence_id=evidence_id
+            )
 
             # Reject duplicate evidence IDs immediately
             if evidence_id in seen_ids:
@@ -164,46 +187,8 @@ class VerificationEngine:
                 contribution_map[evidence_id] = 0.0
                 continue
 
-            # 3. evidence.timestamp is required and strictly validated
-            try:
-                evidence_dt = self._parse_utc_timestamp(
-                    timestamp, field_name=f"evidence '{evidence_id}' timestamp"
-                )
-            except ValueError:
-                has_critical_failure = True
-                has_invalid_evidence = True
-                validation_chain.append(
-                    ValidationRecord(
-                        evidence_id=evidence_id,
-                        timestamp=timestamp_for_lineage,
-                        status=ValidationStatus.UNVERIFIED,
-                        critical=True,
-                    )
-                )
-                contribution_map[evidence_id] = 0.0
-                continue
-
-            # 4. Time-based expiration (expires_at ≤ current_timestamp)
-            if "expires_at" in evidence:
-                try:
-                    expires_at = self._parse_utc_timestamp(
-                        evidence["expires_at"],
-                        field_name=f"evidence '{evidence_id}' expires_at",
-                    )
-                except ValueError:
-                    has_critical_failure = True
-                    has_invalid_evidence = True
-                    validation_chain.append(
-                        ValidationRecord(
-                            evidence_id=evidence_id,
-                            timestamp=timestamp_for_lineage,
-                            status=ValidationStatus.UNVERIFIED,
-                            critical=True,
-                        )
-                    )
-                    contribution_map[evidence_id] = 0.0
-                    continue
-
+            # 3. Time-based expiration (expires_at ≤ current_timestamp)
+            if expires_at is not None:
                 if current_dt >= expires_at:
                     has_critical_failure = True
                     validation_chain.append(
@@ -451,6 +436,31 @@ class VerificationEngine:
         if not math.isfinite(value) or value < 0.0 or value > 1.0:
             raise ValueError(
                 "requested_delta_a must be a finite numeric value in [0.0, 1.0]."
+            )
+        return value
+
+    def _validate_non_empty_string(self, value: Any, field_name: str) -> str:
+        """Validate required top-level non-empty string fields."""
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field_name} must be a non-empty string.")
+        return value
+
+    def _validate_evidence_items(self, evidence_items: Any) -> List[Dict[str, Any]]:
+        """Validate evidence_items is an ordered list for deterministic processing."""
+        if not isinstance(evidence_items, list):
+            raise ValueError("evidence_items must be a list.")
+        return evidence_items
+
+    def _validate_confidence(self, confidence: Any, evidence_id: str) -> float:
+        """Validate confidence is finite numeric in [0.0, 1.0] with bool rejected."""
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+            raise ValueError(
+                f"Evidence '{evidence_id}' confidence must be a finite numeric value in [0.0, 1.0]."
+            )
+        value = float(confidence)
+        if not math.isfinite(value) or value < 0.0 or value > 1.0:
+            raise ValueError(
+                f"Evidence '{evidence_id}' confidence must be a finite numeric value in [0.0, 1.0]."
             )
         return value
 

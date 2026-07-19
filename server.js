@@ -41,6 +41,10 @@ function loadFixtures() {
  */
 app.post('/verify', (req, res) => {
   try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Request body must be a JSON object.' });
+    }
+
     const {
       target_id,
       requested_authority,
@@ -49,13 +53,13 @@ app.post('/verify', (req, res) => {
       evaluation_timestamp
     } = req.body;
 
-    // Validate request
+    // Validate presence of required fields
     if (
-      !target_id ||
-      !requested_authority ||
+      !Object.prototype.hasOwnProperty.call(req.body, 'target_id') ||
+      !Object.prototype.hasOwnProperty.call(req.body, 'requested_authority') ||
       requested_delta_a === undefined ||
-      !evidence_items ||
-      !evaluation_timestamp
+      !Object.prototype.hasOwnProperty.call(req.body, 'evidence_items') ||
+      !Object.prototype.hasOwnProperty.call(req.body, 'evaluation_timestamp')
     ) {
       return res.status(400).json({
         error: 'Missing required fields: target_id, requested_authority, requested_delta_a, evidence_items, evaluation_timestamp'

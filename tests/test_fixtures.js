@@ -194,28 +194,24 @@ test('future-dated evidence collapses delta_v to 0', () => {
 });
 
 test('malformed evidence timestamp collapses delta_v to 0', () => {
-  const resp = verifyRequest('bad_ts_test', 'ANALYZE', 0.2, [
-    { evidence_id: 'E-BAD-TS', source: 'telemetry', timestamp: '2026/07/14 09:00:00',
-      data: { verification_status: 'valid', confidence: 0.95 } }
-  ], '2026-07-14T10:00:00Z');
-  assert.strictEqual(resp.decision, 'REJECT');
-  assert.strictEqual(resp.delta_v, 0.0);
-  assert.strictEqual(resp.validated_delta_a, 0.0);
-  assert.strictEqual(resp.validation_result, 'INVALID');
-  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
+  assert.throws(
+    () => verifyRequest('bad_ts_test', 'ANALYZE', 0.2, [
+      { evidence_id: 'E-BAD-TS', source: 'telemetry', timestamp: '2026/07/14 09:00:00',
+        data: { verification_status: 'valid', confidence: 0.95 } }
+    ], '2026-07-14T10:00:00Z'),
+    /timestamp must be an ISO 8601 UTC timestamp/
+  );
 });
 
 test('malformed expires_at collapses delta_v to 0', () => {
-  const resp = verifyRequest('bad_exp_test', 'ANALYZE', 0.2, [
-    { evidence_id: 'E-BAD-EXP', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
-      expires_at: 'not-a-timestamp',
-      data: { verification_status: 'valid', confidence: 0.95 } }
-  ], '2026-07-14T10:00:00Z');
-  assert.strictEqual(resp.decision, 'REJECT');
-  assert.strictEqual(resp.delta_v, 0.0);
-  assert.strictEqual(resp.validated_delta_a, 0.0);
-  assert.strictEqual(resp.validation_result, 'INVALID');
-  assert.strictEqual(resp.evidence_lineage.validation[0].status, 'UNVERIFIED');
+  assert.throws(
+    () => verifyRequest('bad_exp_test', 'ANALYZE', 0.2, [
+      { evidence_id: 'E-BAD-EXP', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
+        expires_at: 'not-a-timestamp',
+        data: { verification_status: 'valid', confidence: 0.95 } }
+    ], '2026-07-14T10:00:00Z'),
+    /expires_at must be an ISO 8601 UTC timestamp/
+  );
 });
 
 test('mixed valid+expired is fail-closed (REJECT, not GRANT)', () => {
@@ -325,6 +321,136 @@ test('requested_delta_a invalid values throw deterministic errors', () => {
       /requested_delta_a must be/
     );
   }
+});
+
+test('target_id must be non-empty string', () => {
+  const badValues = [null, '', '   ', 1, true];
+  for (const value of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        value,
+        'ANALYZE',
+        0.2,
+        [],
+        '2026-07-14T10:00:00Z'
+      ),
+      /target_id must be a non-empty string/
+    );
+  }
+});
+
+test('requested_authority must be non-empty string', () => {
+  const badValues = [null, '', '   ', 1, false];
+  for (const value of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        'authority_test',
+        value,
+        0.2,
+        [],
+        '2026-07-14T10:00:00Z'
+      ),
+      /requested_authority must be a non-empty string/
+    );
+  }
+});
+
+test('evidence_items must be an array', () => {
+  const badValues = [null, {}, 'not-array', 1, true];
+  for (const value of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        'evidence_items_test',
+        'ANALYZE',
+        0.2,
+        value,
+        '2026-07-14T10:00:00Z'
+      ),
+      /evidence_items must be an array/
+    );
+  }
+});
+
+test('each evidence item must be an object', () => {
+  const badValues = [null, 'bad', 1, true, []];
+  for (const value of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        'evidence_item_object_test',
+        'ANALYZE',
+        0.2,
+        [value],
+        '2026-07-14T10:00:00Z'
+      ),
+      /Each evidence item must be an object/
+    );
+  }
+});
+
+test('evidence data must be an object', () => {
+  const badValues = [null, 'bad', 1, true, []];
+  for (const value of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        'evidence_data_object_test',
+        'ANALYZE',
+        0.2,
+        [
+          {
+            evidence_id: 'E-DATA-OBJ',
+            source: 'telemetry',
+            timestamp: '2026-07-14T09:00:00Z',
+            data: value
+          }
+        ],
+        '2026-07-14T10:00:00Z'
+      ),
+      /data must be an object/
+    );
+  }
+});
+
+test('confidence must be finite numeric in [0,1], including attack confidence=\"bad\"', () => {
+  const badValues = ['bad', null, true, NaN, Infinity, -0.1, 1.1];
+  for (const confidence of badValues) {
+    assert.throws(
+      () => verifyRequest(
+        'confidence_validation_test',
+        'ANALYZE',
+        0.2,
+        [
+          {
+            evidence_id: 'E-CONF-ATTACK',
+            source: 'telemetry',
+            timestamp: '2026-07-14T09:00:00Z',
+            data: { verification_status: 'valid', confidence }
+          }
+        ],
+        '2026-07-14T10:00:00Z'
+      ),
+      /confidence must be a finite numeric value in \[0.0, 1.0\]/
+    );
+  }
+});
+
+test('malformed timestamp with unknown status raises input-validation error', () => {
+  assert.throws(
+    () => verifyRequest(
+      'unknown_status_bad_timestamp',
+      'ANALYZE',
+      0.2,
+      [
+        {
+          evidence_id: 'E-TS-STATUS',
+          source: 'telemetry',
+          timestamp: 'not-a-timestamp',
+          data: { verification_status: 'mystery', confidence: 0.5 }
+        }
+      ],
+      '2026-07-14T10:00:00Z'
+    ),
+    /timestamp must be an ISO 8601 UTC timestamp/
+  );
 });
 
 test('current_timestamp must be strict ISO UTC format', () => {

@@ -42,6 +42,9 @@ class InputValidationError extends Error {
  * @throws {Error} if duplicate evidence IDs are present
  */
 function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceItems, currentTimestamp) {
+  validateNonEmptyString(targetId, 'target_id');
+  validateNonEmptyString(requestedAuthority, 'requested_authority');
+  validateEvidenceItems(evidenceItems);
   const normalizedRequestedDeltaA = validateRequestedDeltaA(requestedDeltaA);
   const currentDt = parseUtcTimestamp(currentTimestamp, 'current_timestamp');
 
@@ -72,11 +75,19 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
     }
 
     const timestamp = evidence.timestamp;
-    const timestampForLineage = typeof timestamp === 'string' ? timestamp : '';
-    const confidence = parseFloat((evidence.data && evidence.data.confidence != null)
-      ? evidence.data.confidence : 0.0);
-    const rawStatus = evidence.data ? evidence.data.verification_status : '';
+    const evidenceDt = parseUtcTimestamp(timestamp, `evidence '${evidenceId}' timestamp`);
+    const timestampForLineage = timestamp;
+
+    let expiresAt = null;
+    if (Object.prototype.hasOwnProperty.call(evidence, 'expires_at')) {
+      expiresAt = parseUtcTimestamp(evidence.expires_at, `evidence '${evidenceId}' expires_at`);
+    }
+
+    const data = evidence.data;
+    validateEvidenceDataObject(data, evidenceId);
+    const rawStatus = data.verification_status;
     const dataStatus = (typeof rawStatus === 'string') ? rawStatus.trim().toLowerCase() : '';
+    const confidence = validateConfidence(data.confidence, evidenceId);
 
     // Reject duplicate evidence IDs immediately
     if (seenIds.has(evidenceId)) {
@@ -123,40 +134,8 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
       continue;
     }
 
-    // 3. evidence.timestamp is required and strictly validated
-    let evidenceDt;
-    try {
-      evidenceDt = parseUtcTimestamp(timestamp, `evidence '${evidenceId}' timestamp`);
-    } catch (_) {
-      hasCriticalFailure = true;
-      hasInvalidEvidence = true;
-      validationChain.push({
-        evidence_id: evidenceId,
-        timestamp: timestampForLineage,
-        status: 'UNVERIFIED',
-        critical: true
-      });
-      contributionMap[evidenceId] = 0.0;
-      continue;
-    }
-
-    // 4. Time-based expiration (expires_at <= currentTimestamp)
-    if (Object.prototype.hasOwnProperty.call(evidence, 'expires_at')) {
-      let expiresAt;
-      try {
-        expiresAt = parseUtcTimestamp(evidence.expires_at, `evidence '${evidenceId}' expires_at`);
-      } catch (_) {
-        hasCriticalFailure = true;
-        hasInvalidEvidence = true;
-        validationChain.push({
-          evidence_id: evidenceId,
-          timestamp: timestampForLineage,
-          status: 'UNVERIFIED',
-          critical: true
-        });
-        contributionMap[evidenceId] = 0.0;
-        continue;
-      }
+    // 3. Time-based expiration (expires_at <= currentTimestamp)
+    if (expiresAt !== null) {
       if (currentDt >= expiresAt) {
         hasCriticalFailure = true;
         validationChain.push({
@@ -343,6 +322,38 @@ function validateRequestedDeltaA(value) {
   }
   if (value < 0.0 || value > 1.0) {
     throw new InputValidationError('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
+  }
+  return value;
+}
+
+function validateNonEmptyString(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new InputValidationError(`${fieldName} must be a non-empty string.`);
+  }
+}
+
+function validateEvidenceItems(value) {
+  if (!Array.isArray(value)) {
+    throw new InputValidationError('evidence_items must be an array.');
+  }
+}
+
+function validateEvidenceDataObject(value, evidenceId) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new InputValidationError(`Evidence '${evidenceId}' data must be an object.`);
+  }
+}
+
+function validateConfidence(value, evidenceId) {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+    throw new InputValidationError(
+      `Evidence '${evidenceId}' confidence must be a finite numeric value in [0.0, 1.0].`
+    );
+  }
+  if (value < 0.0 || value > 1.0) {
+    throw new InputValidationError(
+      `Evidence '${evidenceId}' confidence must be a finite numeric value in [0.0, 1.0].`
+    );
   }
   return value;
 }

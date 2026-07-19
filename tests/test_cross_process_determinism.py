@@ -199,6 +199,128 @@ class TestCrossProcessDeterminism(unittest.TestCase):
         self.assertIn("current_timestamp must be", str(py_err.exception))
         self.assertIn("current_timestamp must be", node_result["error"])
 
+    def test_confidence_string_bad_matches_error(self):
+        request_payload = {
+            "target_id": "bad_confidence",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": 0.2,
+            "evidence_items": [
+                {
+                    "evidence_id": "E1",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": "bad"},
+                }
+            ],
+        }
+
+        with self.assertRaises(ValueError) as py_err:
+            self.engine.verify(
+                target_id=request_payload["target_id"],
+                requested_authority=request_payload["requested_authority"],
+                requested_delta_a=request_payload["requested_delta_a"],
+                evidence_items=request_payload["evidence_items"],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        node_result = _run_node_verify(request_payload, "2026-07-14T10:00:00Z")
+        self.assertFalse(node_result["ok"])
+        self.assertIn("confidence must be a finite numeric value", str(py_err.exception))
+        self.assertIn("confidence must be a finite numeric value", node_result["error"])
+
+    def test_non_object_data_matches_error(self):
+        request_payload = {
+            "target_id": "bad_data_object",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": 0.2,
+            "evidence_items": [
+                {
+                    "evidence_id": "E1",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": "bad",
+                }
+            ],
+        }
+        with self.assertRaises(ValueError) as py_err:
+            self.engine.verify(
+                target_id=request_payload["target_id"],
+                requested_authority=request_payload["requested_authority"],
+                requested_delta_a=request_payload["requested_delta_a"],
+                evidence_items=request_payload["evidence_items"],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        node_result = _run_node_verify(request_payload, "2026-07-14T10:00:00Z")
+        self.assertFalse(node_result["ok"])
+        self.assertIn("data must be an object", str(py_err.exception))
+        self.assertIn("data must be an object", node_result["error"])
+
+    def test_non_list_evidence_items_matches_error(self):
+        request_payload = {
+            "target_id": "bad_evidence_items",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": 0.2,
+            "evidence_items": {},
+        }
+        with self.assertRaises(ValueError) as py_err:
+            self.engine.verify(
+                target_id=request_payload["target_id"],
+                requested_authority=request_payload["requested_authority"],
+                requested_delta_a=request_payload["requested_delta_a"],
+                evidence_items=request_payload["evidence_items"],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        node_result = _run_node_verify(request_payload, "2026-07-14T10:00:00Z")
+        self.assertFalse(node_result["ok"])
+        self.assertIn("evidence_items must be", str(py_err.exception))
+        self.assertIn("evidence_items must be", node_result["error"])
+
+    def test_non_string_requested_authority_matches_error(self):
+        request_payload = {
+            "target_id": "bad_requested_authority",
+            "requested_authority": None,
+            "requested_delta_a": 0.2,
+            "evidence_items": [],
+        }
+        with self.assertRaises(ValueError) as py_err:
+            self.engine.verify(
+                target_id=request_payload["target_id"],
+                requested_authority=request_payload["requested_authority"],
+                requested_delta_a=request_payload["requested_delta_a"],
+                evidence_items=request_payload["evidence_items"],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        node_result = _run_node_verify(request_payload, "2026-07-14T10:00:00Z")
+        self.assertFalse(node_result["ok"])
+        self.assertIn("requested_authority must be a non-empty string", str(py_err.exception))
+        self.assertIn("requested_authority must be a non-empty string", node_result["error"])
+
+    def test_malformed_timestamp_with_unknown_status_matches_error(self):
+        request_payload = {
+            "target_id": "bad_ts_unknown_status",
+            "requested_authority": "ANALYZE",
+            "requested_delta_a": 0.2,
+            "evidence_items": [
+                {
+                    "evidence_id": "E1",
+                    "source": "telemetry",
+                    "timestamp": "not-a-timestamp",
+                    "data": {"verification_status": "mystery", "confidence": 0.5},
+                }
+            ],
+        }
+        with self.assertRaises(ValueError) as py_err:
+            self.engine.verify(
+                target_id=request_payload["target_id"],
+                requested_authority=request_payload["requested_authority"],
+                requested_delta_a=request_payload["requested_delta_a"],
+                evidence_items=request_payload["evidence_items"],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        node_result = _run_node_verify(request_payload, "2026-07-14T10:00:00Z")
+        self.assertFalse(node_result["ok"])
+        self.assertIn("timestamp must be an ISO 8601 UTC timestamp", str(py_err.exception))
+        self.assertIn("timestamp must be an ISO 8601 UTC timestamp", node_result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -539,49 +539,43 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
 
     def test_malformed_evidence_timestamp_fails_closed(self):
-        """Malformed evidence timestamp must fail closed and never GRANT."""
-        response = self.engine.verify(
-            target_id="bad_evidence_timestamp",
-            requested_authority="ANALYZE",
-            requested_delta_a=0.2,
-            evidence_items=[
-                {
-                    "evidence_id": "EVD-BAD-TS-001",
-                    "source": "runtime_telemetry",
-                    "timestamp": "2026/07/14 11:00:00",
-                    "data": {"verification_status": "valid", "confidence": 0.95}
-                }
-            ],
-            current_timestamp="2026-07-14T10:00:00Z"
-        )
-        self.assertEqual(response.decision, Decision.REJECT)
-        self.assertEqual(response.delta_v, 0.0)
-        self.assertEqual(response.validated_delta_a, 0.0)
-        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
-        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+        """Malformed evidence timestamp must raise deterministic input-validation ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="bad_evidence_timestamp",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-BAD-TS-001",
+                        "source": "runtime_telemetry",
+                        "timestamp": "2026/07/14 11:00:00",
+                        "data": {"verification_status": "valid", "confidence": 0.95}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+        self.assertIn("timestamp must be an ISO 8601 UTC timestamp", str(ctx.exception))
 
     def test_malformed_expires_at_fails_closed(self):
-        """Malformed expires_at must fail closed and never GRANT."""
-        response = self.engine.verify(
-            target_id="bad_expires_at",
-            requested_authority="ANALYZE",
-            requested_delta_a=0.2,
-            evidence_items=[
-                {
-                    "evidence_id": "EVD-BAD-EXP-001",
-                    "source": "runtime_telemetry",
-                    "timestamp": "2026-07-14T09:00:00Z",
-                    "expires_at": "bad-expiration",
-                    "data": {"verification_status": "valid", "confidence": 0.95}
-                }
-            ],
-            current_timestamp="2026-07-14T10:00:00Z"
-        )
-        self.assertEqual(response.decision, Decision.REJECT)
-        self.assertEqual(response.delta_v, 0.0)
-        self.assertEqual(response.validated_delta_a, 0.0)
-        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
-        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+        """Malformed expires_at must raise deterministic input-validation ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="bad_expires_at",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-BAD-EXP-001",
+                        "source": "runtime_telemetry",
+                        "timestamp": "2026-07-14T09:00:00Z",
+                        "expires_at": "bad-expiration",
+                        "data": {"verification_status": "valid", "confidence": 0.95}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+        self.assertIn("expires_at must be an ISO 8601 UTC timestamp", str(ctx.exception))
 
     def test_duplicate_evidence_id_raises_value_error(self):
         """Duplicate evidence IDs must be rejected with ValueError."""
@@ -635,6 +629,121 @@ class TestFixtureRegression(unittest.TestCase):
                         evidence_items=[],
                         current_timestamp=ts,
                     )
+
+    def test_target_id_must_be_non_empty_string(self):
+        """target_id must be a non-empty string."""
+        for bad_target_id in [None, "", "   ", 1, True]:
+            with self.subTest(target_id=bad_target_id):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id=bad_target_id,
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_requested_authority_must_be_non_empty_string(self):
+        """requested_authority must be a non-empty string."""
+        for bad_authority in [None, "", "   ", 1, False]:
+            with self.subTest(requested_authority=bad_authority):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="authority_test",
+                        requested_authority=bad_authority,
+                        requested_delta_a=0.2,
+                        evidence_items=[],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_evidence_items_must_be_list(self):
+        """evidence_items must be provided as a list."""
+        for bad_evidence_items in [None, {}, "not-a-list", 1, True]:
+            with self.subTest(evidence_items=bad_evidence_items):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="evidence_items_type_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=bad_evidence_items,
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_each_evidence_item_must_be_object(self):
+        """Each evidence item must be a dictionary/object."""
+        for bad_item in [None, "bad", 1, True, []]:
+            with self.subTest(evidence_item=bad_item):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="evidence_item_obj_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[bad_item],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_evidence_data_must_be_object(self):
+        """Evidence data must be an object."""
+        for bad_data in [None, "bad", 1, True, []]:
+            with self.subTest(data=bad_data):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="evidence_data_obj_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[
+                            {
+                                "evidence_id": "EVD-DATA-001",
+                                "source": "telemetry",
+                                "timestamp": "2026-07-14T09:00:00Z",
+                                "data": bad_data,
+                            }
+                        ],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_confidence_must_be_finite_numeric_in_unit_interval(self):
+        """confidence must be finite numeric within [0,1], including attack value 'bad'."""
+        for bad_confidence in ["bad", None, True, float("nan"), float("inf"), -0.1, 1.1]:
+            with self.subTest(confidence=bad_confidence):
+                with self.assertRaises(ValueError) as ctx:
+                    self.engine.verify(
+                        target_id="confidence_type_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[
+                            {
+                                "evidence_id": "EVD-CONF-001",
+                                "source": "telemetry",
+                                "timestamp": "2026-07-14T09:00:00Z",
+                                "data": {"verification_status": "valid", "confidence": bad_confidence},
+                            }
+                        ],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+                self.assertIn(
+                    "confidence must be a finite numeric value in [0.0, 1.0]",
+                    str(ctx.exception),
+                )
+
+    def test_unknown_status_with_malformed_timestamp_raises_input_error(self):
+        """Malformed required timestamps must raise before lineage construction."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="unknown_status_bad_timestamp",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-TS-STATUS-001",
+                        "source": "telemetry",
+                        "timestamp": "not-a-timestamp",
+                        "data": {"verification_status": "mystery", "confidence": 0.5},
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        self.assertIn("timestamp must be an ISO 8601 UTC timestamp", str(ctx.exception))
 
     def test_risk_score_bounded_to_unit_interval(self):
         """risk_score must always be in [0.0, 1.0]."""
