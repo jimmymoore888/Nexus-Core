@@ -351,7 +351,14 @@ class VerificationEngine:
         )
 
     def _build_signature_payload(self, target_id: str, current_timestamp: str) -> str:
-        """Build canonical signature payload shared with Node.js implementation."""
+        """
+        Build canonical signature payload shared with Node.js implementation.
+
+        Format requirements for cross-process parity:
+        - UTF-8 JSON serialization
+        - lexicographically sorted keys
+        - compact separators ("," and ":") with no extra whitespace
+        """
         payload = {
             "key_id": self.key_id,
             "signature_timestamp": current_timestamp,

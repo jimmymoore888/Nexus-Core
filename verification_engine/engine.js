@@ -269,6 +269,8 @@ function generateSignature(targetId, timestamp) {
   return crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
 }
 
+// Canonical stringifier for deterministic signature payloads only.
+// It must stay aligned with Python json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False).
 function canonicalStringify(value) {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalStringify).join(',')}]`;
