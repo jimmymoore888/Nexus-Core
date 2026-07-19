@@ -19,8 +19,12 @@ def run_tests():
     
     # Discover and run tests
     loader = unittest.TestLoader()
-    start_dir = str(Path(__file__).parent)
+    start_dir = str(Path(__file__).resolve().parent / "tests")
     suite = loader.discover(start_dir, pattern='test_*.py')
+
+    if suite.countTestCases() == 0:
+        print("✗ NO TESTS DISCOVERED in", start_dir)
+        sys.exit(2)
     
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
