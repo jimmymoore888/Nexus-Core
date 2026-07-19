@@ -592,8 +592,8 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertEqual(response.decision, Decision.SAFE_LOCK)
         self.assertEqual(response.validated_delta_a, 0.0)
 
-    def test_signature_uses_hmac_sha256_label(self):
-        """Signature algorithm must use HMAC-SHA256 label."""
+    def test_signature_uses_deterministic_demo_digest_label(self):
+        """Signature algorithm must use deterministic SHA-256-DEMO-DIGEST label."""
         response = self.engine.verify(
             target_id="sig_label_test",
             requested_authority="ANALYZE",
@@ -608,8 +608,44 @@ class TestFixtureRegression(unittest.TestCase):
             ],
             current_timestamp="2026-07-14T10:00:00Z"
         )
-        self.assertEqual(response.signature.algorithm, "HMAC-SHA256")
+        self.assertEqual(response.signature.algorithm, "SHA-256-DEMO-DIGEST")
         self.assertEqual(response.signature.timestamp, "2026-07-14T10:00:00Z")
+
+    def test_critical_flag_marks_failed_evidence(self):
+        """Fail-closed evidence entries must be explicitly flagged critical."""
+        response = self.engine.verify(
+            target_id="critical_flag_failed",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-CRIT-FAIL",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "expired", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertTrue(response.evidence_lineage.validation[0].critical)
+
+    def test_critical_flag_marks_valid_evidence_noncritical(self):
+        """Valid evidence entries must be explicitly flagged non-critical."""
+        response = self.engine.verify(
+            target_id="critical_flag_valid",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-CRIT-VALID",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertFalse(response.evidence_lineage.validation[0].critical)
 
 
 if __name__ == '__main__':

@@ -11,7 +11,7 @@
  * - Duplicate evidence IDs are rejected (throws Error).
  * - risk_score is bounded to [0.0, 1.0].
  * - Evaluation timestamp is determined from the explicit currentTimestamp argument.
- * - Signature label corrected to HMAC-SHA256 to reflect placeholder construction.
+ * - Signature now uses deterministic SHA-256-DEMO-DIGEST over canonical payload.
  */
 
 'use strict';
@@ -75,7 +75,8 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
       validationChain.push({
         evidence_id: evidenceId,
         timestamp: timestamp,
-        status: dataStatus === 'expired' ? 'EXPIRED' : 'INVALID'
+        status: dataStatus === 'expired' ? 'EXPIRED' : 'INVALID',
+        critical: true
       });
       contributionMap[evidenceId] = 0.0;
       continue;
@@ -89,7 +90,8 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
         validationChain.push({
           evidence_id: evidenceId,
           timestamp: timestamp,
-          status: 'EXPIRED'
+          status: 'EXPIRED',
+          critical: true
         });
         contributionMap[evidenceId] = 0.0;
         continue;
@@ -108,7 +110,8 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
       validationChain.push({
         evidence_id: evidenceId,
         timestamp: timestamp,
-        status: 'INVALID'
+        status: 'INVALID',
+        critical: true
       });
       contributionMap[evidenceId] = 0.0;
       continue;
@@ -119,7 +122,8 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
       validationChain.push({
         evidence_id: evidenceId,
         timestamp: timestamp,
-        status: 'INVALID'
+        status: 'INVALID',
+        critical: true
       });
       contributionMap[evidenceId] = 0.0;
       continue;
@@ -130,7 +134,8 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
     validationChain.push({
       evidence_id: evidenceId,
       timestamp: timestamp,
-      status: 'VALID'
+      status: 'VALID',
+      critical: false
     });
 
     const contribution = confidence * 0.1;
@@ -198,7 +203,7 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
     decision, requestedDeltaA, deltaV, verificationMargin, hasFailedEvidence, currentTimestamp
   );
 
-  // Cryptographic signature (HMAC-SHA256 placeholder)
+  // Deterministic demo digest over canonical UTF-8 payload.
   const signatureValue = generateSignature(targetId, currentTimestamp);
 
   return {
@@ -218,7 +223,7 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
       decision: decisionContext
     },
     signature: {
-      algorithm: 'HMAC-SHA256',
+      algorithm: 'SHA-256-DEMO-DIGEST',
       value: signatureValue,
       key_id: 'KEY-NEXUS-VE-001',
       timestamp: currentTimestamp
@@ -256,11 +261,23 @@ function buildDecisionContext(decision, deltaA, deltaV, verificationMargin, hasF
 }
 
 function generateSignature(targetId, timestamp) {
-  const hmac = crypto.createHmac('sha256', 'placeholder-key');
-  hmac.update(targetId + timestamp);
-  const digest = hmac.digest();
-  const num = digest.readUInt32BE(0) % 1000;
-  return 'placeholder_signature_' + String(num).padStart(3, '0');
+  const payload = canonicalStringify({
+    key_id: 'KEY-NEXUS-VE-001',
+    signature_timestamp: timestamp,
+    target_id: targetId
+  });
+  return crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
+}
+
+function canonicalStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalStringify).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map(key => `${JSON.stringify(key)}:${canonicalStringify(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 module.exports = { verifyRequest };

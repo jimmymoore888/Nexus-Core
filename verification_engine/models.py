@@ -34,12 +34,14 @@ class ValidationRecord:
     evidence_id: str
     timestamp: str  # ISO 8601
     status: ValidationStatus
+    critical: bool
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "evidence_id": self.evidence_id,
             "timestamp": self.timestamp,
-            "status": self.status.value
+            "status": self.status.value,
+            "critical": self.critical,
         }
 
 
@@ -61,7 +63,7 @@ class DecisionContext:
 @dataclass
 class CryptographicSignature:
     """Cryptographic signature over canonical response."""
-    algorithm: str  # e.g., "RSA-SHA256"
+    algorithm: str  # e.g., "SHA-256-DEMO-DIGEST"
     value: str     # hex-encoded signature
     key_id: str    # public key identifier
     timestamp: str # ISO 8601

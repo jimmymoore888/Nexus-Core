@@ -11,11 +11,13 @@ Zero Drift Corrections (v0.1.1):
 - Duplicate evidence IDs are rejected (ValueError).
 - risk_score is bounded to [0.0, 1.0].
 - Evaluation timestamp is determined from the explicit current_timestamp argument.
-- Signature label corrected to HMAC-SHA256 to reflect placeholder construction.
+- Signature uses deterministic SHA-256-DEMO-DIGEST over canonical payload.
 """
 
 from datetime import datetime, timezone
 from typing import Dict, List, Any
+import hashlib
+import json
 from verification_engine.models import (
     VerificationResponse,
     EvidenceLineage,
@@ -115,6 +117,7 @@ class VerificationEngine:
                         status=ValidationStatus.EXPIRED
                         if data_status == "expired"
                         else ValidationStatus.INVALID,
+                        critical=True,
                     )
                 )
                 contribution_map[evidence_id] = 0.0
@@ -132,6 +135,7 @@ class VerificationEngine:
                             evidence_id=evidence_id,
                             timestamp=timestamp,
                             status=ValidationStatus.EXPIRED,
+                            critical=True,
                         )
                     )
                     contribution_map[evidence_id] = 0.0
@@ -149,6 +153,7 @@ class VerificationEngine:
                             evidence_id=evidence_id,
                             timestamp=timestamp,
                             status=ValidationStatus.INVALID,
+                            critical=True,
                         )
                     )
                     contribution_map[evidence_id] = 0.0
@@ -161,6 +166,7 @@ class VerificationEngine:
                         evidence_id=evidence_id,
                         timestamp=timestamp,
                         status=ValidationStatus.INVALID,
+                        critical=True,
                     )
                 )
                 contribution_map[evidence_id] = 0.0
@@ -173,6 +179,7 @@ class VerificationEngine:
                     evidence_id=evidence_id,
                     timestamp=timestamp,
                     status=ValidationStatus.VALID,
+                    critical=False,
                 )
             )
 
@@ -234,10 +241,11 @@ class VerificationEngine:
             evaluation_timestamp=current_timestamp,
         )
 
-        # Cryptographic signature (HMAC-SHA256 placeholder)
+        # Deterministic demo digest over canonical UTF-8 payload.
+        signature_payload = self._build_signature_payload(target_id, current_timestamp)
         signature = CryptographicSignature(
-            algorithm="HMAC-SHA256",
-            value=f"placeholder_signature_{hash(target_id + str(current_timestamp)) % 1000:03d}",
+            algorithm="SHA-256-DEMO-DIGEST",
+            value=hashlib.sha256(signature_payload.encode("utf-8")).hexdigest(),
             key_id=self.key_id,
             timestamp=current_timestamp,
         )
@@ -341,3 +349,12 @@ class VerificationEngine:
             reasoning=reasoning,
             governing_principle=principle,
         )
+
+    def _build_signature_payload(self, target_id: str, current_timestamp: str) -> str:
+        """Build canonical signature payload shared with Node.js implementation."""
+        payload = {
+            "key_id": self.key_id,
+            "signature_timestamp": current_timestamp,
+            "target_id": target_id,
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

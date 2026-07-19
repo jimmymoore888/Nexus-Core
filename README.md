@@ -18,7 +18,7 @@ git clone https://github.com/jimmymoore888/Nexus-Core.git
 cd Nexus-Core
 
 # Install Node dependencies
-npm install
+npm ci
 
 # Python verification engine is included in verification_engine/
 ```
@@ -102,7 +102,8 @@ Expected response (GRANT decision):
       {
         "evidence_id": "EVD-001",
         "timestamp": "2026-07-14T10:00:00Z",
-        "status": "VALID"
+        "status": "VALID",
+        "critical": false
       }
     ],
     "contribution": {
@@ -115,8 +116,8 @@ Expected response (GRANT decision):
     }
   },
   "signature": {
-    "algorithm": "RSA-SHA256",
-    "value": "placeholder_signature_001",
+    "algorithm": "SHA-256-DEMO-DIGEST",
+    "value": "d3f6b4f7c6ac1026f9d617253fd6f78f617fdbe5d1b6c9cc161d0d26f13a5f4a",
     "key_id": "KEY-NEXUS-VE-001",
     "timestamp": "2026-07-14T10:00:01Z"
   }
@@ -232,6 +233,11 @@ Run focused tests:
 ```bash
 python -m unittest -q tests.test_nexus_simulation
 ```
+
+## Assurance Notes
+
+- See `/home/runner/work/Nexus-Core/Nexus-Core/docs/ASSURANCE_LIMITATIONS.md` for Apache-2.0/IP/trademark/certification/paid-pilot limitations.
+- This repository does not claim independent third-party validation.
 
 # Nexus-Core
 ## Governance Through Verification

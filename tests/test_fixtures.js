@@ -259,13 +259,29 @@ test('risk_score is bounded to [0, 1]', () => {
   }
 });
 
-test('signature algorithm is HMAC-SHA256', () => {
+test('signature algorithm is SHA-256-DEMO-DIGEST', () => {
   const resp = verifyRequest('sig_test', 'ANALYZE', 0.2, [
     { evidence_id: 'E1', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
       data: { verification_status: 'valid', confidence: 0.9 } }
   ], '2026-07-14T10:00:00Z');
-  assert.strictEqual(resp.signature.algorithm, 'HMAC-SHA256');
+  assert.strictEqual(resp.signature.algorithm, 'SHA-256-DEMO-DIGEST');
   assert.strictEqual(resp.signature.timestamp, '2026-07-14T10:00:00Z');
+});
+
+test('critical flag is true for failed evidence entries', () => {
+  const resp = verifyRequest('critical_true_test', 'ANALYZE', 0.2, [
+    { evidence_id: 'E-CRIT', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
+      data: { verification_status: 'expired', confidence: 0.0 } }
+  ], '2026-07-14T10:00:00Z');
+  assert.strictEqual(resp.evidence_lineage.validation[0].critical, true);
+});
+
+test('critical flag is false for valid evidence entries', () => {
+  const resp = verifyRequest('critical_false_test', 'ANALYZE', 0.2, [
+    { evidence_id: 'E-VALID', source: 'telemetry', timestamp: '2026-07-14T09:00:00Z',
+      data: { verification_status: 'valid', confidence: 0.9 } }
+  ], '2026-07-14T10:00:00Z');
+  assert.strictEqual(resp.evidence_lineage.validation[0].critical, false);
 });
 
 test('decision context uses evaluation timestamp', () => {
