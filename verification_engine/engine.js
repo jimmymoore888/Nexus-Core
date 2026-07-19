@@ -280,4 +280,4 @@ function canonicalStringify(value) {
   return JSON.stringify(value);
 }
 
-module.exports = { verifyRequest };
+module.exports = { verifyRequest, canonicalStringify, generateSignature };

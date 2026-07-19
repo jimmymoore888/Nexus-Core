@@ -16,7 +16,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const { verifyRequest } = require('../verification_engine/engine');
+const { verifyRequest, canonicalStringify, generateSignature } = require('../verification_engine/engine');
 
 let passed = 0;
 let failed = 0;
@@ -282,6 +282,22 @@ test('critical flag is false for valid evidence entries', () => {
       data: { verification_status: 'valid', confidence: 0.9 } }
   ], '2026-07-14T10:00:00Z');
   assert.strictEqual(resp.evidence_lineage.validation[0].critical, false);
+});
+
+test('canonicalStringify sorts nested keys deterministically', () => {
+  const payload = { z: 1, a: { y: 2, x: 3 }, b: [3, { d: 4, c: null }] };
+  const expected = '{"a":{"x":3,"y":2},"b":[3,{"c":null,"d":4}],"z":1}';
+  assert.strictEqual(canonicalStringify(payload), expected);
+  assert.strictEqual(canonicalStringify(payload), expected);
+});
+
+test('generateSignature deterministic with special characters', () => {
+  const targetId = 'system/α?=value&x=1';
+  const ts = '2026-07-14T10:00:00Z';
+  const sig1 = generateSignature(targetId, ts);
+  const sig2 = generateSignature(targetId, ts);
+  assert.strictEqual(sig1, sig2);
+  assert.strictEqual(sig1.length, 64);
 });
 
 test('decision context uses evaluation timestamp', () => {

@@ -236,7 +236,7 @@ python -m unittest -q tests.test_nexus_simulation
 
 ## Assurance Notes
 
-- See `/home/runner/work/Nexus-Core/Nexus-Core/docs/ASSURANCE_LIMITATIONS.md` for Apache-2.0/IP/trademark/certification/paid-pilot limitations.
+- See `docs/ASSURANCE_LIMITATIONS.md` for Apache-2.0/IP/trademark/certification/paid-pilot limitations.
 - This repository does not claim independent third-party validation.
 
 # Nexus-Core
