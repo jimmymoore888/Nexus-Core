@@ -440,6 +440,7 @@ class VerificationEngine:
 
         Note: bool is rejected explicitly even though bool subclasses int in Python.
         """
+        # bool is a subclass of int in Python; reject explicitly for strict numeric validation.
         if isinstance(requested_delta_a, bool) or not isinstance(
             requested_delta_a, (int, float)
         ):

@@ -73,16 +73,7 @@ app.post('/verify', (req, res) => {
     res.json(response);
   } catch (err) {
     console.error('Verification error:', err);
-    if (
-      err.message &&
-      (
-        err.message.startsWith('Duplicate evidence_id') ||
-        err.message.includes('requested_delta_a must be') ||
-        err.message.includes('must be an ISO 8601 UTC timestamp') ||
-        err.message.includes('must include a non-empty') ||
-        err.message.includes('must be an object')
-      )
-    ) {
+    if (err && err.name === 'InputValidationError') {
       return res.status(400).json({ error: err.message });
     }
     res.status(500).json({ error: err.message });

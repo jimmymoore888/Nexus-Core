@@ -23,6 +23,13 @@ const ISO_UTC_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const RECOGNIZED_EVIDENCE_STATUSES = new Set(['valid', 'expired', 'invalid', 'unverified']);
 const CRITICAL_FAILED_STATUSES = new Set(['expired', 'invalid', 'unverified']);
 
+class InputValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'InputValidationError';
+  }
+}
+
 /**
  * Execute deterministic verification against evidence lineage.
  *
@@ -51,17 +58,17 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
 
   for (const evidence of evidenceItems) {
     if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
-      throw new Error('Each evidence item must be an object.');
+      throw new InputValidationError('Each evidence item must be an object.');
     }
 
     const evidenceId = evidence.evidence_id;
     if (typeof evidenceId !== 'string' || evidenceId.trim() === '') {
-      throw new Error('Each evidence item must include a non-empty evidence_id string.');
+      throw new InputValidationError('Each evidence item must include a non-empty evidence_id string.');
     }
 
     const source = evidence.source;
     if (typeof source !== 'string' || source.trim() === '') {
-      throw new Error(`Evidence '${evidenceId}' must include a non-empty source string.`);
+      throw new InputValidationError(`Evidence '${evidenceId}' must include a non-empty source string.`);
     }
 
     const timestamp = evidence.timestamp;
@@ -73,7 +80,7 @@ function verifyRequest(targetId, requestedAuthority, requestedDeltaA, evidenceIt
 
     // Reject duplicate evidence IDs immediately
     if (seenIds.has(evidenceId)) {
-      throw new Error(
+      throw new InputValidationError(
         `Duplicate evidence_id detected: '${evidenceId}'. Each evidence item must carry a unique ID.`
       );
     }
@@ -332,10 +339,10 @@ function generateSignature(targetId, timestamp) {
  */
 function validateRequestedDeltaA(value) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
-    throw new Error('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
+    throw new InputValidationError('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
   }
   if (value < 0.0 || value > 1.0) {
-    throw new Error('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
+    throw new InputValidationError('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
   }
   return value;
 }
@@ -349,11 +356,11 @@ function validateRequestedDeltaA(value) {
  */
 function parseUtcTimestamp(value, fieldName) {
   if (typeof value !== 'string' || !ISO_UTC_TIMESTAMP_RE.test(value)) {
-    throw new Error(`${fieldName} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ.`);
+    throw new InputValidationError(`${fieldName} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ.`);
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
-    throw new Error(`${fieldName} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ.`);
+    throw new InputValidationError(`${fieldName} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ.`);
   }
   return parsed;
 }
@@ -371,4 +378,4 @@ function canonicalStringify(value) {
   return JSON.stringify(value);
 }
 
-module.exports = { verifyRequest, canonicalStringify, generateSignature };
+module.exports = { verifyRequest, canonicalStringify, generateSignature, InputValidationError };

@@ -610,7 +610,7 @@ class TestFixtureRegression(unittest.TestCase):
 
     def test_requested_delta_a_strict_validation(self):
         """requested_delta_a must be finite numeric in [0,1]."""
-        bad_values = [-0.1, 1.1, float("nan"), float("inf"), "0.2", True, None]
+        bad_values = [-0.1, 1.1, float("nan"), float("inf"), float("-inf"), "0.2", True, None]
         for bad in bad_values:
             with self.subTest(value=bad):
                 with self.assertRaises(ValueError):
