@@ -435,7 +435,11 @@ class VerificationEngine:
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
     def _validate_requested_delta_a(self, requested_delta_a: Any) -> float:
-        """Validate requested_delta_a as a finite numeric value within [0, 1]."""
+        """
+        Validate requested_delta_a as a finite numeric value within [0, 1].
+
+        Note: bool is rejected explicitly even though bool subclasses int in Python.
+        """
         if isinstance(requested_delta_a, bool) or not isinstance(
             requested_delta_a, (int, float)
         ):
@@ -452,6 +456,7 @@ class VerificationEngine:
     def _parse_utc_timestamp(self, value: Any, field_name: str) -> datetime:
         """
         Parse strict UTC timestamps of format YYYY-MM-DDTHH:MM:SSZ.
+        Offsets like +00:00 are intentionally rejected to keep canonical parity.
         Raises ValueError on missing/malformed values.
         """
         if not isinstance(value, str) or not _ISO_UTC_TIMESTAMP_RE.match(value):

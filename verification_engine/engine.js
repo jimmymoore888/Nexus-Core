@@ -325,6 +325,11 @@ function generateSignature(targetId, timestamp) {
   return crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
 }
 
+/**
+ * Validate requested_delta_a as a finite Number within [0.0, 1.0].
+ * @param {*} value
+ * @returns {number}
+ */
 function validateRequestedDeltaA(value) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
     throw new Error('requested_delta_a must be a finite numeric value in [0.0, 1.0].');
@@ -335,6 +340,13 @@ function validateRequestedDeltaA(value) {
   return value;
 }
 
+/**
+ * Parse strict UTC timestamps in canonical format YYYY-MM-DDTHH:MM:SSZ.
+ * The fieldName is included in deterministic validation errors.
+ * @param {*} value
+ * @param {string} fieldName
+ * @returns {Date}
+ */
 function parseUtcTimestamp(value, fieldName) {
   if (typeof value !== 'string' || !ISO_UTC_TIMESTAMP_RE.test(value)) {
     throw new Error(`${fieldName} must be an ISO 8601 UTC timestamp in format YYYY-MM-DDTHH:MM:SSZ.`);

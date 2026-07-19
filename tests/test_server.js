@@ -62,11 +62,12 @@ function startServer() {
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let stderrBuffer = '';
     const timeout = setTimeout(() => {
       if (!settled) {
         settled = true;
         child.kill('SIGTERM');
-        reject(new Error('Server start timed out'));
+        reject(new Error(`Server start timed out. stderr: ${stderrBuffer.trim()}`));
       }
     }, 5000);
 
@@ -79,15 +80,15 @@ function startServer() {
       }
     });
 
-    child.stderr.on('data', () => {
-      // no-op; failures are asserted through HTTP responses
+    child.stderr.on('data', (buf) => {
+      stderrBuffer += buf.toString('utf8');
     });
 
     child.on('exit', (code) => {
       if (!settled) {
         settled = true;
         clearTimeout(timeout);
-        reject(new Error(`Server exited before startup (code=${code})`));
+        reject(new Error(`Server exited before startup (code=${code}). stderr: ${stderrBuffer.trim()}`));
       }
     });
   });
