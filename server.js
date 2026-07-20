@@ -8,6 +8,7 @@
  */
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const fs = require('fs');
 const path = require('path');
 const { verifyRequest } = require('./verification_engine/engine');
@@ -19,6 +20,14 @@ const bridge = new TGLRBridge();
 
 app.use(express.json());
 app.use('/demo', express.static(path.join(__dirname, 'demo')));
+
+const bridgeRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Bridge request rate limit exceeded.' }
+});
 
 // Load fixtures for regression testing
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
@@ -91,7 +100,7 @@ app.post('/verify', (req, res) => {
  * Bounded TGLR bridge endpoint
  * POST /bridge/verify
  */
-app.post('/bridge/verify', (req, res) => {
+app.post('/bridge/verify', bridgeRateLimit, (req, res) => {
   try {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       return res.status(400).json({ error: 'Request body must be a JSON object.' });
