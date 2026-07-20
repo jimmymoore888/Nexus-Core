@@ -3,6 +3,15 @@ Independent Review Findings
 
 ## Status Notice
 
+Correction record (2026-07-20):
+- No reviewer identity was recorded in repository evidence.
+- No reviewed commit SHA was recorded in repository evidence.
+- No engagement terms were recorded in repository evidence.
+- No independent-review methodology evidence was recorded in repository evidence.
+
+Accordingly, this file is retained as historical analysis content only and
+must not be represented as a verified independent external audit.
+
 This document was written against v0.1.0 of the Verification Engine.
 Two bugs found during the Zero Drift corrective package (v0.1.1) showed that
 the engine was NOT fully enforcing ΔA ≤ ΔV at the time of the original review:
@@ -79,4 +88,5 @@ suite and do not constitute external certification.
 
 ## Status
 
-This document records independent review findings and should guide future architecture work before distributed verification infrastructure is implemented.
+This document records historical review-style findings and should guide
+future architecture work. It does not by itself establish independent audit status.

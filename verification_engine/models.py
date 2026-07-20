@@ -62,10 +62,10 @@ class DecisionContext:
 
 @dataclass
 class CryptographicSignature:
-    """Cryptographic signature over canonical response."""
+    """Contract-locked signature field carrying deterministic demo digest metadata."""
     algorithm: str  # e.g., "SHA-256-DEMO-DIGEST"
-    value: str     # hex-encoded signature
-    key_id: str    # public key identifier
+    value: str     # hex-encoded deterministic digest value
+    key_id: str    # compatibility identifier from locked contract
     timestamp: str # ISO 8601
 
     def to_dict(self) -> Dict[str, Any]:

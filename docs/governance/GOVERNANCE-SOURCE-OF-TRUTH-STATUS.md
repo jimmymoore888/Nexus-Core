@@ -70,9 +70,11 @@ Great Library controls.
 
 ## 6. Validation Discrepancies
 
-`verification_report.py — NOT LOCATED ON MAIN`
+Historical discrepancy note: prior references to missing
+`verification_report.py` are no longer accurate for this branch state.
+The file is present in repository root for local/internal verification.
 
-Do not repair or remove the referenced command within this pull request.
+This update does not claim Constitution v0.2 recovery.
 
 ## 7. Non-Drift Rule
 

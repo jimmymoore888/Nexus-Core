@@ -11,11 +11,14 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { verifyRequest } = require('./verification_engine/engine');
+const { TGLRBridge } = require('./tglr_bridge/bridge');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const bridge = new TGLRBridge();
 
 app.use(express.json());
+app.use('/demo', express.static(path.join(__dirname, 'demo')));
 
 // Load fixtures for regression testing
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
@@ -78,6 +81,32 @@ app.post('/verify', (req, res) => {
   } catch (err) {
     console.error('Verification error:', err);
     if (err && err.name === 'InputValidationError') {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Bounded TGLR bridge endpoint
+ * POST /bridge/verify
+ */
+app.post('/bridge/verify', (req, res) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Request body must be a JSON object.' });
+    }
+    const response = bridge.verify(req.body);
+    res.json(response);
+  } catch (err) {
+    console.error('Bridge verification error:', err);
+    if (err && err.name === 'InputValidationError') {
+      return res.status(400).json({ error: err.message });
+    }
+    if (err instanceof Error && err.name === 'ValueError') {
+      return res.status(400).json({ error: err.message });
+    }
+    if (err && /must be/.test(err.message || '')) {
       return res.status(400).json({ error: err.message });
     }
     res.status(500).json({ error: err.message });

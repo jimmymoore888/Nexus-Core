@@ -68,7 +68,7 @@ class TestVerificationEngineSchema(unittest.TestCase):
         self.assertIsNotNone(lineage.decision)
 
     def test_signature_present(self):
-        """Verify cryptographic signature is present."""
+        """Verify contract-locked signature field is present with demo digest metadata."""
         response = self.engine.verify(
             target_id="test_003",
             requested_authority="ANALYZE",

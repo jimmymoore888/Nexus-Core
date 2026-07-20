@@ -4,19 +4,31 @@ This report is internal repository evidence only.
 
 ## Command Results
 
-- `npm ci` → success (`added 68 packages`, `found 0 vulnerabilities`)
-- `python -m unittest discover -s tests -p 'test_*.py'` → success (`Ran 50 tests`, `OK`)
-- `npm test` → success (`Ran 25 test(s): 25 passed, 0 failed`)
-- `python nexus_simulation.py` → success (`Constraint Violations: 0`, `VDebt_Final: 0.0000`)
+- `python run_tests.py` → success (`Ran 87 tests`, `Failures: 0`, `Errors: 0`)
+- `python -m unittest discover -s tests -q` → success (`Ran 87 tests`, `OK`)
+- `npm test` → success:
+  - fixtures: `39/39`
+  - server: `5/5`
+  - bridge: `8/8`
+  - bridge server: `5/5`
+  - seeded invariants: `10 assertion groups`, `actual_constraint_violations = 0`
+- `python nexus_simulation.py` → success (`Constraint Violations: 0`, `VDebt_Final: 0.0000`, `Cycles: 100000`)
 - `python verification_report.py` → success (`actual_constraint_violations: 0`, `final_verification_debt: 0.0`)
-- `python adversarial_simulations.py` → success (exit code 0)
+- `python adversarial_simulations.py` → success
+- `python scripts/check_versions.py` → success
+- `python scripts/check_locked_contract.py` → success
+- `python scripts/check_claims.py` → success
+- `npm audit --omit=dev` → success (`0 vulnerabilities`)
 
-## Outputs
+## Distinctions
 
-- `/home/runner/work/Nexus-Core/Nexus-Core/reports/internal_verification_report.json`
-- `/home/runner/work/Nexus-Core/Nexus-Core/reports/checksum_manifest.sha256`
+- Internal verification evidence: this report and local command outputs.
+- CI evidence: produced by GitHub Actions runs.
+- Bounded bridge demonstration evidence: local in-memory bridge tests/spec/demo.
+- External review/certification/production/customer/paid-pilot evidence: not claimed in this report.
 
-## Limitations
+## Core outputs
 
-- No independent third-party validation is claimed.
-- No certification or paid-pilot completion is claimed by this report.
+- `actual_constraint_violations = 0`
+- `final_verification_debt = 0.0`
+- `locked_contract_sha256 = 7d96f7fcaea1f0677bc2fbac1e282e69b64942be7da40a91035aab61dc5f30bb`

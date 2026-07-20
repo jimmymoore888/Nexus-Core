@@ -1,7 +1,7 @@
 # TGLR — The Great Library Resurrected
 
 **Document ID:** TGLR-CORE-DEF-001  
-**Revision:** 0.1  
+**Revision:** 0.2  
 **Status:** PROPOSED ARCHITECTURE — NON-CONSTITUTIONAL — NON-EXECUTABLE  
 **Authority:** Jimmy W. Moore  
 **Repository:** jimmymoore888/Nexus-Core  
@@ -16,6 +16,11 @@ It does not amend, replace, reproduce, reinterpret, or reconstruct the
 frozen Nexus Core Constitution v0.2.
 
 It does not authorize implementation.
+
+## Revision Record
+
+- **0.2 (2026-07-20):** Cross-referenced `TGLR-UIR-LAW-001` and added explicit bounded bridge interpretation and receiver-side controls.
+- **0.1:** Initial proposed architecture draft.
 
 ## 2. Working Definition
 
@@ -42,6 +47,9 @@ This relationship is conceptual and non-executable.
 
 It does not establish constitutional hierarchy, article numbering,
 implementation authority, or deployment approval.
+
+The UIR Law (`TGLR-UIR-LAW-001`) is a proposed expansion/connectivity axiom.
+It is not constitutional text and is not executable proof of infinity.
 
 ## 4. The Book
 
@@ -94,6 +102,11 @@ No External Book Writes Directly Into Another Book
 
 No Library Contribution Directly Commands Actuators
 
+Connectivity does not create trust, belief, authority, access permission,
+adaptation, or direct writes.
+
+No front end or external Book may write directly into another Book's accepted memory.
+
 ## 8. Imported-Adaptation Constraint
 
 Any future imported adaptation remains subordinate to:
@@ -106,6 +119,9 @@ support that adaptation.
 
 This statement preserves the Foundational Law. It does not define an
 executable calculation or protocol.
+
+In bounded demonstrations this remains enforced as receiver-side Zero Drift:
+ΔA_import ≤ ΔV_receiver.
 
 ## 9. Preservation and Correction
 

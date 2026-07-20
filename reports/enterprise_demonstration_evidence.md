@@ -1,15 +1,17 @@
 # Bounded Enterprise Demonstration Evidence
 
-Scope: Internal demonstration only, constrained to repository test/simulation harnesses.
+Scope: internal bounded demonstration only.
 
-Evidence included:
-- Python unit tests and invariant tests in `tests/`.
-- Node fixture and invariant tests in `tests/test_fixtures.js` and `tests/test_invariants.js`.
-- Simulation outputs from `python nexus_simulation.py`.
-- Adversarial scenario summaries in `reports/byzantine_*_summary.json`.
+Included evidence:
+- Python tests (87 total) including bridge and parity cases.
+- Node tests including fixtures, HTTP server, bridge unit/server, and seeded invariants.
+- 100,000-cycle simulation output from `python nexus_simulation.py`.
+- Verification report output (`actual_constraint_violations: 0`, `final_verification_debt: 0.0`).
+- Bounded bridge growth/connectivity proxy (100 admitted sequential states from `U0`).
 
-Bounds and exclusions:
-- No claim of independent external validation.
-- No claim of certification or regulatory approval.
-- No claim that simulation outputs prove production safety.
-- No claim of paid pilot completion from this repository alone.
+Not claimed by this document:
+- Independent external review completion.
+- Certification/regulatory approval.
+- Production validation or deployment.
+- Customer/agency/government adoption evidence.
+- Paid pilot completion evidence.

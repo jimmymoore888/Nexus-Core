@@ -10,6 +10,12 @@ Nexus Core is a constitutional control architecture for governance through verif
 It connects evidence, verification, authorization, responsibility, and governed adaptation
 while preserving human oversight and constitutional authority.
 
+Current implemented repository scope is limited to:
+- Python and Node verification engines;
+- local/mock HTTP service endpoints (`/verify`, `/bridge/verify`);
+- simulations and automated tests;
+- bounded in-memory TGLR bridge demonstration artifacts.
+
 ## Technology hierarchy
 
 The architecture may govern components across:
@@ -38,6 +44,8 @@ actually recorded by the project. The following limitations apply:
   certification is granted by use of this software.
 - Enterprise pilot evidence, external certification, and paid deployment claims
   require separately documented and independently verifiable evidence.
+- This repository does not claim production TGLR federation, production Book Sentinel,
+  or independent external audit completion.
 
 ## Constitutional relationship
 

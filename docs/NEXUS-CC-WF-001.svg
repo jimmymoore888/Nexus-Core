@@ -169,8 +169,8 @@
   <!-- Response Fields Right -->
   <rect x="720" y="565" width="280" height="310" class="box" rx="4" />
   <text x="735" y="585" class="label" font-weight="bold">signature</text>
-  <text x="735" y="603" class="field">algorithm: RSA-SHA256 |</text>
-  <text x="735" y="619" class="field">           ECDSA-SHA256</text>
+  <text x="735" y="603" class="field">algorithm: SHA-256-DEMO-DIGEST</text>
+  <text x="735" y="619" class="field">compatibility label</text>
   <text x="735" y="635" class="field">value: hex-encoded sig</text>
   <text x="735" y="651" class="field">key_id: public_key_id</text>
   <text x="735" y="667" class="field">timestamp: ISO 8601</text>
