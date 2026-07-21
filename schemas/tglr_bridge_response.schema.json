@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/tglr_bridge_response.schema.json",
+  "title": "TGLR Bridge Verify Response",
+  "type": "object",
+  "required": [
+    "request_id",
+    "source_book_id",
+    "receiver_book_id",
+    "state_id",
+    "decision",
+    "admission_status",
+    "reason",
+    "lineage",
+    "audit_digest_ref",
+    "finite_generation_count",
+    "demonstration_scope",
+    "engine_response"
+  ],
+  "properties": {
+    "request_id": { "type": "string" },
+    "source_book_id": { "type": "string" },
+    "receiver_book_id": { "type": "string" },
+    "state_id": { "type": "string" },
+    "decision": { "type": "string", "enum": ["GRANT", "REJECT", "SAFE_LOCK"] },
+    "admission_status": { "type": "string", "enum": ["ADMITTED", "REJECTED"] },
+    "reason": { "type": "string" },
+    "lineage": {
+      "type": "object",
+      "required": ["parent_state_ids", "connected_to_u0", "generation"],
+      "properties": {
+        "parent_state_ids": { "type": "array", "items": { "type": "string" } },
+        "connected_to_u0": { "type": "boolean" },
+        "generation": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "audit_digest_ref": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "finite_generation_count": { "type": "integer", "minimum": 0 },
+    "demonstration_scope": { "type": "string" },
+    "engine_response": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": [
+            "decision",
+            "requested_authority",
+            "verified",
+            "validation_result",
+            "validated_delta_a",
+            "delta_v",
+            "risk_score",
+            "verification_margin",
+            "mutation",
+            "evidence_lineage",
+            "signature"
+          ]
+        }
+      ]
+    }
+  }
+}

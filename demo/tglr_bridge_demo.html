@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TGLR Bridge Demo (Bounded)</title>
+  <style>
+    body { font-family: sans-serif; margin: 1rem auto; max-width: 900px; }
+    textarea { width: 100%; min-height: 200px; }
+    pre { background: #111; color: #d9d9d9; padding: 1rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>TGLR Bridge Demonstration</h1>
+  <p>This is a bounded, local research demonstration only. Finite tests do not prove the infinite UIR axiom.</p>
+  <textarea id="payload">{
+  "request_id": "REQ-DEMO-001",
+  "source_book_id": "BOOK-A",
+  "receiver_book_id": "BOOK-A",
+  "state_id": "STATE-001",
+  "parent_state_ids": ["U0"],
+  "target_id": "system_001",
+  "requested_authority": "ANALYZE",
+  "requested_delta_a": 0.3,
+  "evaluation_timestamp": "2026-07-20T00:00:00Z",
+  "evidence_items": [{
+    "evidence_id": "EVD-001",
+    "source": "telemetry",
+    "timestamp": "2026-07-19T23:59:59Z",
+    "data": {"verification_status": "valid", "confidence": 0.95}
+  }]
+}</textarea>
+  <br />
+  <button id="submit">POST /bridge/verify</button>
+  <pre id="out"></pre>
+
+  <script>
+    function esc(v) {
+      return String(v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    document.getElementById('submit').addEventListener('click', async () => {
+      const out = document.getElementById('out');
+      try {
+        const payload = JSON.parse(document.getElementById('payload').value);
+        const res = await fetch('/bridge/verify', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const body = await res.json();
+        out.innerHTML = esc(JSON.stringify({ status: res.status, body }, null, 2));
+      } catch (err) {
+        out.innerHTML = esc(err.message || String(err));
+      }
+    });
+  </script>
+</body>
+</html>

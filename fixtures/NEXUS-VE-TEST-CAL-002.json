@@ -32,7 +32,7 @@
     "requested_authority": "ANALYZE",
     "verified": false,
     "validation_result": "EXPIRED",
-    "validated_delta_a": 0.31,
+    "validated_delta_a": 0.0,
     "delta_v": 0.0,
     "risk_score": 0.87,
     "verification_margin": -0.31,

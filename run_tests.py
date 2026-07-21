@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Test runner for Nexus Verification Engine v0.1
-Executes full test suite before PR submission
+Test runner for Nexus Verification Engine v0.1.1
+Executes full test suite before PR submission.
+Exits non-zero if zero tests are discovered.
 """
 
 import sys
-import subprocess
 import unittest
 from pathlib import Path
 
@@ -13,14 +13,22 @@ def run_tests():
     """Execute comprehensive test suite."""
     
     print("=" * 80)
-    print("NEXUS VERIFICATION ENGINE v0.1 - TEST SUITE")
+    print("NEXUS VERIFICATION ENGINE v0.1.1 - TEST SUITE")
     print("=" * 80)
     print()
     
     # Discover and run tests
     loader = unittest.TestLoader()
-    start_dir = str(Path(__file__).parent)
-    suite = loader.discover(start_dir, pattern='test_*.py')
+    start_dir = Path(__file__).resolve().parent / "tests"
+    suite = loader.discover(str(start_dir), pattern='test_*.py')
+    
+    # Fail immediately if no tests were discovered
+    if suite.countTestCases() == 0:
+        print("✗ ZERO TESTS DISCOVERED — aborting")
+        print()
+        print("No test files matching 'test_*.py' were found.")
+        print("Ensure test files exist under the tests/ directory.")
+        return 2
     
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
@@ -41,11 +49,11 @@ def run_tests():
         print("Implementation ready for review:")
         print("  - Authoritative contract: contracts/NEXUS-CC-CON-001.json")
         print("  - Python engine: verification_engine/")
+        print("  - Node.js engine: verification_engine/engine.js")
         print("  - Node.js service: server.js")
         print("  - Fixture tests: fixtures/")
         print("  - Documentation: docs/NEXUS-CC-WF-001.svg, README.md")
         print()
-        print("Opening pull request to main...")
         return 0
     else:
         print("✗ TESTS FAILED")

@@ -68,7 +68,7 @@ class TestVerificationEngineSchema(unittest.TestCase):
         self.assertIsNotNone(lineage.decision)
 
     def test_signature_present(self):
-        """Verify cryptographic signature is present."""
+        """Verify contract-locked signature field is present with demo digest metadata."""
         response = self.engine.verify(
             target_id="test_003",
             requested_authority="ANALYZE",
@@ -239,7 +239,7 @@ class TestFixtureRegression(unittest.TestCase):
 
     def test_distinction_request_reject_vs_safe_lock(self):
         """Distinguish request-level REJECT from systemic SAFE_LOCK."""
-        # Request-level REJECT: expired evidence
+        # Request-level REJECT: expired evidence collapses ΔV, fails at request level
         response_reject = self.engine.verify(
             target_id="distinguish_test_reject",
             requested_authority="ANALYZE",
@@ -256,11 +256,11 @@ class TestFixtureRegression(unittest.TestCase):
             current_timestamp="2026-07-13T20:00:01Z"
         )
 
-        # Systemic SAFE_LOCK: insufficient capacity, no expiration issue
+        # Systemic SAFE_LOCK: ΔA > ΔV but delta_v > 0 (capacity overrun, no failed evidence)
         response_lock = self.engine.verify(
             target_id="distinguish_test_lock",
             requested_authority="ANALYZE",
-            requested_delta_a=0.9,  # Request exceeds any possible ΔV
+            requested_delta_a=0.9,  # Request exceeds delta_v=0.75
             evidence_items=[
                 {
                     "evidence_id": "EVD-VALID",
@@ -276,7 +276,43 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertLess(response_reject.verification_margin, 0)
         self.assertLess(response_lock.verification_margin, 0)
         self.assertEqual(response_reject.decision, Decision.REJECT)
+        self.assertEqual(response_reject.validated_delta_a, 0.0)
         self.assertEqual(response_lock.decision, Decision.SAFE_LOCK)
+        self.assertEqual(response_lock.validated_delta_a, 0.0)
+        # SAFE_LOCK preserves delta_v > 0 (capacity was present, just insufficient)
+        self.assertGreater(response_lock.delta_v, 0.0)
+        self.assertEqual(response_lock.delta_v, 0.75)
+
+    def test_safe_lock_regression_delta_v_positive(self):
+        """Regression: SAFE_LOCK occurs when delta_v > 0 but ΔA > ΔV."""
+        response = self.engine.verify(
+            target_id="safe_lock_regression",
+            requested_authority="ACTUATE",
+            requested_delta_a=0.8,   # ΔA=0.8 > ΔV=0.75
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-SL-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T10:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.95}
+                },
+                {
+                    "evidence_id": "EVD-SL-002",
+                    "source": "audit_log",
+                    "timestamp": "2026-07-14T09:55:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.92}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:01Z"
+        )
+
+        self.assertEqual(response.decision, Decision.SAFE_LOCK)
+        self.assertFalse(response.verified)
+        # delta_v must remain positive — capacity existed but was insufficient
+        self.assertEqual(response.delta_v, 0.75)
+        self.assertLess(response.verification_margin, 0)
+        # validated_delta_a must be 0.0 for SAFE_LOCK
+        self.assertEqual(response.validated_delta_a, 0.0)
 
     def test_evidence_lineage_auditable(self):
         """Verify evidence_lineage supports auditability."""
@@ -313,6 +349,8 @@ class TestFixtureRegression(unittest.TestCase):
         # Decision context present
         self.assertIsNotNone(lineage.decision.reasoning)
         self.assertIsNotNone(lineage.decision.governing_principle)
+        # Decision context timestamp equals evaluation timestamp
+        self.assertEqual(lineage.decision.timestamp, "2026-07-14T10:00:00Z")
 
     def test_multiple_evidence_sources(self):
         """Test aggregation of evidence from multiple sources."""
@@ -348,8 +386,11 @@ class TestFixtureRegression(unittest.TestCase):
         self.assertEqual(len(response.evidence_lineage.source), 3)
         self.assertEqual(len(response.evidence_lineage.validation), 3)
 
-    def test_mixed_valid_and_expired_evidence(self):
-        """Test handling of mixed valid and expired evidence."""
+    def test_mixed_valid_and_expired_evidence_is_fail_closed(self):
+        """
+        Expired-by-time evidence is fail-closed: REJECT even when valid evidence co-exists.
+        Zero Drift correction: any expired evidence collapses ΔV to 0.
+        """
         response = self.engine.verify(
             target_id="mixed_test",
             requested_authority="ANALYZE",
@@ -372,15 +413,489 @@ class TestFixtureRegression(unittest.TestCase):
             current_timestamp="2026-07-14T10:00:00Z"
         )
 
-        # Should succeed with remaining valid evidence
-        self.assertEqual(response.decision, Decision.GRANT)
-        self.assertTrue(response.verified)
-        # Validation chain should show both
+        # Zero Drift: expired evidence collapses ΔV → REJECT, not GRANT
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        # Validation chain shows both entries
         self.assertEqual(len(response.evidence_lineage.validation), 2)
-        # One should be VALID, one EXPIRED
         statuses = [v.status for v in response.evidence_lineage.validation]
         self.assertIn(ValidationStatus.VALID, statuses)
         self.assertIn(ValidationStatus.EXPIRED, statuses)
+
+    def test_invalid_status_evidence_is_fail_closed(self):
+        """Evidence with data.verification_status='invalid' collapses ΔV to 0."""
+        response = self.engine.verify(
+            target_id="invalid_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-INVALID-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "invalid", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_unverified_status_evidence_is_fail_closed(self):
+        """Evidence with data.verification_status='unverified' collapses ΔV to 0."""
+        response = self.engine.verify(
+            target_id="unverified_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-UNVERIFIED-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "unverified", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_unknown_status_evidence_is_fail_closed(self):
+        """Unknown verification_status must fail closed and never GRANT."""
+        response = self.engine.verify(
+            target_id="unknown_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-UNKNOWN-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "mystery", "confidence": 0.7}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_missing_status_evidence_is_fail_closed(self):
+        """Missing verification_status must fail closed and never GRANT."""
+        response = self.engine.verify(
+            target_id="missing_status_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-MISSING-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"confidence": 0.7}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.validation_result, ValidationStatus.INVALID)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_future_dated_evidence_is_fail_closed(self):
+        """Evidence with a future timestamp (timestamp > evaluation time) collapses ΔV to 0."""
+        response = self.engine.verify(
+            target_id="future_dated_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-FUTURE-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T11:00:00Z",  # Future: after evaluation time
+                    "data": {"verification_status": "valid", "confidence": 0.95}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertFalse(response.verified)
+        self.assertEqual(response.delta_v, 0.0)
+        self.assertEqual(response.validated_delta_a, 0.0)
+        self.assertEqual(response.evidence_lineage.validation[0].status, ValidationStatus.UNVERIFIED)
+
+    def test_malformed_evidence_timestamp_fails_closed(self):
+        """Malformed evidence timestamp must raise deterministic input-validation ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="bad_evidence_timestamp",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-BAD-TS-001",
+                        "source": "runtime_telemetry",
+                        "timestamp": "2026/07/14 11:00:00",
+                        "data": {"verification_status": "valid", "confidence": 0.95}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+        self.assertIn("timestamp must be an ISO 8601 UTC timestamp", str(ctx.exception))
+
+    def test_malformed_expires_at_fails_closed(self):
+        """Malformed expires_at must raise deterministic input-validation ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="bad_expires_at",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-BAD-EXP-001",
+                        "source": "runtime_telemetry",
+                        "timestamp": "2026-07-14T09:00:00Z",
+                        "expires_at": "bad-expiration",
+                        "data": {"verification_status": "valid", "confidence": 0.95}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+        self.assertIn("expires_at must be an ISO 8601 UTC timestamp", str(ctx.exception))
+
+    def test_duplicate_evidence_id_raises_value_error(self):
+        """Duplicate evidence IDs must be rejected with ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="dup_id_test",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-DUP",
+                        "source": "source_a",
+                        "timestamp": "2026-07-14T09:00:00Z",
+                        "data": {"verification_status": "valid", "confidence": 0.9}
+                    },
+                    {
+                        "evidence_id": "EVD-DUP",
+                        "source": "source_b",
+                        "timestamp": "2026-07-14T09:30:00Z",
+                        "data": {"verification_status": "valid", "confidence": 0.8}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+        self.assertIn("EVD-DUP", str(ctx.exception))
+
+    def test_requested_delta_a_strict_validation(self):
+        """requested_delta_a must be finite numeric in [0,1]."""
+        bad_values = [-0.1, 1.1, float("nan"), float("inf"), float("-inf"), "0.2", True, None]
+        for bad in bad_values:
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="bad_delta_a",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=bad,
+                        evidence_items=[],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_current_timestamp_strict_validation(self):
+        """current_timestamp must be strict ISO 8601 UTC with trailing Z."""
+        bad_timestamps = [None, "", "2026-07-14T10:00:00", "2026/07/14 10:00:00"]
+        for ts in bad_timestamps:
+            with self.subTest(timestamp=ts):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="bad_current_ts",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[],
+                        current_timestamp=ts,
+                    )
+
+    def test_target_id_must_be_non_empty_string(self):
+        """target_id must be a non-empty string."""
+        for bad_target_id in [None, "", "   ", 1, True]:
+            with self.subTest(target_id=bad_target_id):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id=bad_target_id,
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_requested_authority_must_be_non_empty_string(self):
+        """requested_authority must be a non-empty string."""
+        for bad_authority in [None, "", "   ", 1, False]:
+            with self.subTest(requested_authority=bad_authority):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="authority_test",
+                        requested_authority=bad_authority,
+                        requested_delta_a=0.2,
+                        evidence_items=[],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_evidence_items_must_be_list(self):
+        """evidence_items must be provided as a list."""
+        for bad_evidence_items in [None, {}, "not-a-list", 1, True]:
+            with self.subTest(evidence_items=bad_evidence_items):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="evidence_items_type_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=bad_evidence_items,
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_each_evidence_item_must_be_object(self):
+        """Each evidence item must be a dictionary/object."""
+        for bad_item in [None, "bad", 1, True, []]:
+            with self.subTest(evidence_item=bad_item):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="evidence_item_obj_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[bad_item],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_evidence_data_must_be_object(self):
+        """Evidence data must be an object."""
+        for bad_data in [None, "bad", 1, True, []]:
+            with self.subTest(data=bad_data):
+                with self.assertRaises(ValueError):
+                    self.engine.verify(
+                        target_id="evidence_data_obj_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[
+                            {
+                                "evidence_id": "EVD-DATA-001",
+                                "source": "telemetry",
+                                "timestamp": "2026-07-14T09:00:00Z",
+                                "data": bad_data,
+                            }
+                        ],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+
+    def test_confidence_must_be_finite_numeric_in_unit_interval(self):
+        """confidence must be finite numeric within [0,1], including attack value 'bad'."""
+        for bad_confidence in ["bad", None, True, float("nan"), float("inf"), -0.1, 1.1]:
+            with self.subTest(confidence=bad_confidence):
+                with self.assertRaises(ValueError) as ctx:
+                    self.engine.verify(
+                        target_id="confidence_type_test",
+                        requested_authority="ANALYZE",
+                        requested_delta_a=0.2,
+                        evidence_items=[
+                            {
+                                "evidence_id": "EVD-CONF-001",
+                                "source": "telemetry",
+                                "timestamp": "2026-07-14T09:00:00Z",
+                                "data": {"verification_status": "valid", "confidence": bad_confidence},
+                            }
+                        ],
+                        current_timestamp="2026-07-14T10:00:00Z",
+                    )
+                self.assertIn(
+                    "confidence must be a finite numeric value in [0.0, 1.0]",
+                    str(ctx.exception),
+                )
+
+    def test_unknown_status_with_malformed_timestamp_raises_input_error(self):
+        """Malformed required timestamps must raise before lineage construction."""
+        with self.assertRaises(ValueError) as ctx:
+            self.engine.verify(
+                target_id="unknown_status_bad_timestamp",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.2,
+                evidence_items=[
+                    {
+                        "evidence_id": "EVD-TS-STATUS-001",
+                        "source": "telemetry",
+                        "timestamp": "not-a-timestamp",
+                        "data": {"verification_status": "mystery", "confidence": 0.5},
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z",
+            )
+        self.assertIn("timestamp must be an ISO 8601 UTC timestamp", str(ctx.exception))
+
+    def test_risk_score_bounded_to_unit_interval(self):
+        """risk_score must always be in [0.0, 1.0]."""
+        for confidence in [0.0, 0.5, 1.0]:
+            response = self.engine.verify(
+                target_id=f"risk_bound_test_{confidence}",
+                requested_authority="ANALYZE",
+                requested_delta_a=0.1,
+                evidence_items=[
+                    {
+                        "evidence_id": f"EVD-RISK-{confidence}",
+                        "source": "telemetry",
+                        "timestamp": "2026-07-14T09:00:00Z",
+                        "data": {"verification_status": "valid", "confidence": confidence}
+                    }
+                ],
+                current_timestamp="2026-07-14T10:00:00Z"
+            )
+            self.assertGreaterEqual(response.risk_score, 0.0)
+            self.assertLessEqual(response.risk_score, 1.0)
+
+    def test_validated_delta_a_grant_equals_requested(self):
+        """On GRANT, validated_delta_a equals requested_delta_a."""
+        response = self.engine.verify(
+            target_id="vda_grant_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.45,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-VDA-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.GRANT)
+        self.assertEqual(response.validated_delta_a, 0.45)
+
+    def test_validated_delta_a_reject_is_zero(self):
+        """On REJECT, validated_delta_a must be 0.0 regardless of requested value."""
+        response = self.engine.verify(
+            target_id="vda_reject_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.5,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-REJECT-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "invalid", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.REJECT)
+        self.assertEqual(response.validated_delta_a, 0.0)
+
+    def test_validated_delta_a_safe_lock_is_zero(self):
+        """On SAFE_LOCK, validated_delta_a must be 0.0."""
+        response = self.engine.verify(
+            target_id="vda_safe_lock_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.9,  # exceeds delta_v=0.75
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-SAFELOCK-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.decision, Decision.SAFE_LOCK)
+        self.assertEqual(response.validated_delta_a, 0.0)
+
+    def test_signature_uses_deterministic_demo_digest_label(self):
+        """Signature algorithm must use deterministic SHA-256-DEMO-DIGEST label."""
+        response = self.engine.verify(
+            target_id="sig_label_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-SIG-001",
+                    "source": "telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertEqual(response.signature.algorithm, "SHA-256-DEMO-DIGEST")
+        self.assertEqual(response.signature.timestamp, "2026-07-14T10:00:00Z")
+
+    def test_lineage_statuses_remain_contract_compatible(self):
+        """Lineage validation statuses must remain in VALID/EXPIRED/UNVERIFIED."""
+        response = self.engine.verify(
+            target_id="lineage_enum_test",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-LINEAGE-001",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T11:00:00Z",
+                    "data": {"verification_status": "invalid", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        allowed = {ValidationStatus.VALID, ValidationStatus.EXPIRED, ValidationStatus.UNVERIFIED}
+        for validation in response.evidence_lineage.validation:
+            self.assertIn(validation.status, allowed)
+
+    def test_critical_flag_marks_failed_evidence(self):
+        """Fail-closed evidence entries must be explicitly flagged critical."""
+        response = self.engine.verify(
+            target_id="critical_flag_failed",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-CRIT-FAIL",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "expired", "confidence": 0.0}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertTrue(response.evidence_lineage.validation[0].critical)
+
+    def test_critical_flag_marks_valid_evidence_noncritical(self):
+        """Valid evidence entries must be explicitly flagged non-critical."""
+        response = self.engine.verify(
+            target_id="critical_flag_valid",
+            requested_authority="ANALYZE",
+            requested_delta_a=0.2,
+            evidence_items=[
+                {
+                    "evidence_id": "EVD-CRIT-VALID",
+                    "source": "runtime_telemetry",
+                    "timestamp": "2026-07-14T09:00:00Z",
+                    "data": {"verification_status": "valid", "confidence": 0.9}
+                }
+            ],
+            current_timestamp="2026-07-14T10:00:00Z"
+        )
+        self.assertFalse(response.evidence_lineage.validation[0].critical)
 
 
 if __name__ == '__main__':

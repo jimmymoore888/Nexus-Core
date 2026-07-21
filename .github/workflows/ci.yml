@@ -1,0 +1,80 @@
+name: Nexus-Core CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  verification-matrix:
+    name: "CI (${{ matrix.stack }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [python, node]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: matrix.stack == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        if: matrix.stack == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Python test runner (zero-test guard)
+        if: matrix.stack == 'python'
+        run: python run_tests.py
+
+      - name: Python unittest discover
+        if: matrix.stack == 'python'
+        run: python -m unittest discover -s tests -q
+
+      - name: Node test suite
+        if: matrix.stack == 'node'
+        run: npm test
+
+      - name: Nexus simulation (100,000-cycle default)
+        if: matrix.stack == 'python'
+        run: python nexus_simulation.py
+
+      - name: Adversarial simulations
+        if: matrix.stack == 'python'
+        run: python adversarial_simulations.py
+
+      - name: Verification report
+        if: matrix.stack == 'python'
+        run: python verification_report.py
+
+      - name: Version consistency check
+        if: matrix.stack == 'python'
+        run: python scripts/check_versions.py
+
+      - name: Locked contract hash check
+        if: matrix.stack == 'python'
+        run: python scripts/check_locked_contract.py
+
+      - name: Claims and governance check
+        if: matrix.stack == 'python'
+        run: python scripts/check_claims.py
+
+      - name: Checksum manifest verification
+        if: matrix.stack == 'python'
+        run: sha256sum -c reports/checksum_manifest.sha256
+
+      - name: npm audit (prod deps)
+        if: matrix.stack == 'node'
+        run: npm audit --omit=dev
